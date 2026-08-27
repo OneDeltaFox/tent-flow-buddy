@@ -4,10 +4,11 @@ export type Bed = {
   id: string;
   label: string;
   status: BedStatus;
-  bib?: string;
-  since?: string;
-  note?: string;
+  bib?: string | undefined;
+  since?: string | undefined;
+  note?: string | undefined;
 };
+
 
 export type Pod = {
   id: string;
