@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Bed, BedStatus, Pod } from "@/lib/tent-data";
-import { departures, incoming, pods } from "@/lib/tent-data";
+import { BEDS_PER_POD, departures, emptyPod, incoming, initialPods } from "@/lib/tent-data";
 
 const statusTile: Record<BedStatus, string> = {
   open: "bg-status-open/15 border-status-open/50 text-status-open",
@@ -45,60 +45,78 @@ function podCounts(pod: Pod) {
 function PodCard({
   pod,
   selected,
+  setup,
   onSelect,
+  onRemove,
 }: {
   pod: Pod;
   selected: boolean;
+  setup: boolean;
   onSelect: () => void;
+  onRemove: () => void;
 }) {
   const { open, critical, total } = podCounts(pod);
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`flex min-w-0 flex-col gap-3 rounded-lg border bg-card p-3 text-left transition-colors ${
-        selected ? "border-signal ring-1 ring-signal" : "border-border hover:border-muted-foreground"
-      }`}
-    >
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold tracking-tight">{pod.name}</h3>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {pod.capabilities.map((c) => (
-              <span
-                key={c}
-                className="rounded-sm border border-border bg-secondary px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-tight text-muted-foreground"
-              >
-                {c}
-              </span>
-            ))}
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onSelect}
+        className={`flex w-full min-w-0 flex-col gap-3 rounded-lg border bg-card p-3 text-left transition-colors ${
+          selected ? "border-signal ring-1 ring-signal" : "border-border hover:border-muted-foreground"
+        }`}
+      >
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold tracking-tight">{pod.name}</h3>
+            {pod.capabilities.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {pod.capabilities.map((c) => (
+                  <span
+                    key={c}
+                    className="rounded-sm border border-border bg-secondary px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-tight text-muted-foreground"
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="shrink-0 text-right font-mono">
+            <div className="text-lg font-extrabold leading-none text-status-open">
+              {String(open).padStart(2, "0")}
+            </div>
+            <div className="text-[9px] font-bold uppercase text-muted-foreground">open / {total}</div>
           </div>
         </div>
-        <div className="shrink-0 text-right font-mono">
-          <div className="text-lg font-extrabold leading-none text-status-open">
-            {String(open).padStart(2, "0")}
-          </div>
-          <div className="text-[9px] font-bold uppercase text-muted-foreground">open / {total}</div>
+
+        <div className="grid grid-cols-4 gap-1.5">
+          {pod.beds.map((b) => (
+            <BedTile key={b.id} bed={b} />
+          ))}
         </div>
-      </div>
 
-      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
-        {pod.beds.map((b) => (
-          <BedTile key={b.id} bed={b} />
-        ))}
-      </div>
-
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border pt-2">
-        <span className="truncate text-[10px] font-medium text-muted-foreground">
-          {pod.staff.join(" · ")}
-        </span>
-        {critical > 0 && (
-          <span className="shrink-0 rounded-sm bg-status-critical/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-status-critical">
-            {critical} critical
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border pt-2">
+          <span className="truncate text-[10px] font-medium text-muted-foreground">
+            {pod.staff.length > 0 ? pod.staff.join(" · ") : "No staff assigned"}
           </span>
-        )}
-      </div>
-    </button>
+          {critical > 0 && (
+            <span className="shrink-0 rounded-sm bg-status-critical/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-status-critical">
+              {critical} critical
+            </span>
+          )}
+        </div>
+      </button>
+      {setup && (
+        <button
+          type="button"
+          onClick={onRemove}
+          title="Remove pod"
+          className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full border border-status-critical bg-status-critical text-sm font-bold leading-none text-foreground hover:opacity-80"
+        >
+          ×
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -131,11 +149,15 @@ function PodDetail({ pod, onClose }: { pod: Pod; onClose: () => void }) {
         </div>
         <div className="min-w-0">
           <div className="text-[9px] font-bold uppercase text-muted-foreground">Staff on pod</div>
-          <div className="text-xs font-medium text-foreground">{pod.staff.join(", ")}</div>
+          <div className="text-xs font-medium text-foreground">
+            {pod.staff.length > 0 ? pod.staff.join(", ") : "—"}
+          </div>
         </div>
         <div className="min-w-0">
           <div className="text-[9px] font-bold uppercase text-muted-foreground">Capabilities</div>
-          <div className="text-xs font-medium text-foreground">{pod.capabilities.join(", ")}</div>
+          <div className="text-xs font-medium text-foreground">
+            {pod.capabilities.length > 0 ? pod.capabilities.join(", ") : "—"}
+          </div>
         </div>
       </div>
 
@@ -173,8 +195,42 @@ function PodDetail({ pod, onClose }: { pod: Pod; onClose: () => void }) {
   );
 }
 
+function nextPodId(pods: Pod[]): string {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  const used = new Set(pods.map((p) => p.id));
+  return letters.find((l) => !used.has(l)) ?? `P${pods.length + 1}`;
+}
+
+const STORAGE_KEY = "tent-board-pods-v1";
+
+function loadPods(): Pod[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return initialPods;
+    const parsed = JSON.parse(raw) as Pod[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return initialPods;
+    return parsed;
+  } catch {
+    return initialPods;
+  }
+}
+
 export function TentBoard() {
   const [selectedPod, setSelectedPod] = useState<string | null>(null);
+  const [setup, setSetup] = useState(false);
+  const [pods, setPods] = useState<Pod[]>(initialPods);
+  const [hydrated, setHydrated] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newZone, setNewZone] = useState("");
+
+  useEffect(() => {
+    setPods(loadPods());
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(pods));
+  }, [pods, hydrated]);
 
   const totals = useMemo(() => {
     const all = pods.flatMap((p) => p.beds);
@@ -184,9 +240,23 @@ export function TentBoard() {
       critical: all.filter((b) => b.status === "critical").length,
       cleaning: all.filter((b) => b.status === "cleaning").length,
     };
-  }, []);
+  }, [pods]);
 
   const pod = pods.find((p) => p.id === selectedPod) ?? null;
+
+  const addPod = () => {
+    const id = nextPodId(pods);
+    const name = newName.trim() || `Pod ${id}`;
+    const newPod = emptyPod(id, name, newZone.trim() || "Unassigned zone");
+    setPods((prev) => [...prev, newPod]);
+    setNewName("");
+    setNewZone("");
+  };
+
+  const removePod = (id: string) => {
+    setPods((prev) => prev.filter((p) => p.id !== id));
+    if (selectedPod === id) setSelectedPod(null);
+  };
 
   return (
     <div className="flex min-h-screen flex-col gap-3 bg-background p-3 font-sans text-foreground lg:p-4">
@@ -224,17 +294,38 @@ export function TentBoard() {
                 {String(totals.cleaning).padStart(2, "0")}
               </div>
             </div>
+            <div>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                Pods
+              </div>
+              <div className="text-3xl font-extrabold leading-none text-foreground">
+                {String(pods.length).padStart(2, "0")}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-3">
-          {(["open", "occupied", "critical", "cleaning"] as BedStatus[]).map((s) => (
-            <div key={s} className="flex items-center gap-1.5">
-              <span className={`size-3 rounded-sm border ${statusTile[s]}`} />
-              <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                {statusLabel[s]}
-              </span>
-            </div>
-          ))}
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={() => setSetup((s) => !s)}
+            className={`rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+              setup
+                ? "border-signal bg-signal text-background"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {setup ? "Done" : "Edit layout"}
+          </button>
+          <div className="flex flex-wrap justify-end gap-3">
+            {(["open", "occupied", "critical", "cleaning"] as BedStatus[]).map((s) => (
+              <div key={s} className="flex items-center gap-1.5">
+                <span className={`size-3 rounded-sm border ${statusTile[s]}`} />
+                <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                  {statusLabel[s]}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -270,23 +361,54 @@ export function TentBoard() {
         </aside>
 
         <section className="flex min-w-0 flex-col gap-3">
+          {setup && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-signal bg-card p-3">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Add pod ({BEDS_PER_POD} open beds)
+              </span>
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Name (e.g. Pod G — Wound Care)"
+                className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+              />
+              <input
+                value={newZone}
+                onChange={(e) => setNewZone(e.target.value)}
+                placeholder="Zone / location"
+                className="w-40 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+              />
+              <button
+                type="button"
+                onClick={addPod}
+                className="rounded-sm border border-signal bg-signal px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+              >
+                + Add
+              </button>
+              <span className="w-full text-[10px] text-muted-foreground">
+                In edit mode, tap the × on a pod to remove it from the tent.
+              </span>
+            </div>
+          )}
           <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
             {pods.map((p) => (
               <PodCard
                 key={p.id}
                 pod={p}
                 selected={selectedPod === p.id}
-                onSelect={() => setSelectedPod(selectedPod === p.id ? null : p.id)}
+                setup={setup}
+                onSelect={() => !setup && setSelectedPod(selectedPod === p.id ? null : p.id)}
+                onRemove={() => removePod(p.id)}
               />
             ))}
           </div>
-          {pod ? (
+          {pod && !setup ? (
             <PodDetail pod={pod} onClose={() => setSelectedPod(null)} />
-          ) : (
+          ) : !setup ? (
             <p className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
               Select a pod to see who is in each bed
             </p>
-          )}
+          ) : null}
         </section>
 
         <aside className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">

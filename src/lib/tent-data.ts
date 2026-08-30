@@ -46,7 +46,22 @@ function bed(
   return { id: label, label, status, bib, since, note };
 }
 
-export const pods: Pod[] = [
+export const BEDS_PER_POD = 4;
+
+export function emptyPod(id: string, name: string, zone: string): Pod {
+  return {
+    id,
+    name,
+    zone,
+    capabilities: [],
+    staff: [],
+    beds: Array.from({ length: BEDS_PER_POD }, (_, i) =>
+      bed(`${id}${i + 1}`, "open"),
+    ),
+  };
+}
+
+export const initialPods: Pod[] = [
   {
     id: "A",
     name: "Pod A — Acute",
@@ -57,11 +72,7 @@ export const pods: Pod[] = [
       bed("A1", "critical", "2201", "14:58", "Cooling immersion"),
       bed("A2", "critical", "0009", "15:05", "Awaiting transport"),
       bed("A3", "occupied", "0412", "14:10"),
-      bed("A4", "occupied", "0099", "14:38"),
-      bed("A5", "cleaning"),
-      bed("A6", "open"),
-      bed("A7", "open"),
-      bed("A8", "open"),
+      bed("A4", "open"),
     ],
   },
   {
@@ -74,13 +85,7 @@ export const pods: Pod[] = [
       bed("B1", "occupied", "0142", "14:20"),
       bed("B2", "occupied", "0881", "14:35"),
       bed("B3", "occupied", "0109", "14:42"),
-      bed("B4", "occupied", "0556", "14:50"),
-      bed("B5", "open"),
-      bed("B6", "open"),
-      bed("B7", "cleaning"),
-      bed("B8", "open"),
-      bed("B9", "open"),
-      bed("B10", "open"),
+      bed("B4", "open"),
     ],
   },
   {
@@ -94,8 +99,6 @@ export const pods: Pod[] = [
       bed("C2", "occupied", "0045", "14:55"),
       bed("C3", "occupied", "1282", "15:02"),
       bed("C4", "open"),
-      bed("C5", "open"),
-      bed("C6", "open"),
     ],
   },
   {
@@ -109,10 +112,6 @@ export const pods: Pod[] = [
       bed("D2", "occupied", "1190", "15:04"),
       bed("D3", "occupied", "0318", "15:06"),
       bed("D4", "open"),
-      bed("D5", "open"),
-      bed("D6", "open"),
-      bed("D7", "open"),
-      bed("D8", "open"),
     ],
   },
   {
@@ -126,14 +125,6 @@ export const pods: Pod[] = [
       bed("E2", "occupied", "0620", "14:52"),
       bed("E3", "open"),
       bed("E4", "open"),
-      bed("E5", "open"),
-      bed("E6", "cleaning"),
-      bed("E7", "open"),
-      bed("E8", "open"),
-      bed("E9", "open"),
-      bed("E10", "open"),
-      bed("E11", "open"),
-      bed("E12", "open"),
     ],
   },
   {
@@ -146,13 +137,7 @@ export const pods: Pod[] = [
       bed("F1", "occupied", "0005", "14:33"),
       bed("F2", "occupied", "0011", "14:36"),
       bed("F3", "occupied", "0082", "14:41"),
-      bed("F4", "occupied", "0045", "14:44"),
-      bed("F5", "open"),
-      bed("F6", "open"),
-      bed("F7", "open"),
-      bed("F8", "open"),
-      bed("F9", "open"),
-      bed("F10", "open"),
+      bed("F4", "open"),
     ],
   },
 ];
