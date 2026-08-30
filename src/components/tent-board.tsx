@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Bed, BedStatus, Pod } from "@/lib/tent-data";
+import type { Bed, BedStatus, Pod, Triage } from "@/lib/tent-data";
 import { BEDS_PER_POD, departures, emptyPod, incoming, initialPods } from "@/lib/tent-data";
 
 const statusTile: Record<BedStatus, string> = {
@@ -16,22 +16,123 @@ const statusLabel: Record<BedStatus, string> = {
   cleaning: "Cleaning",
 };
 
-function BedTile({ bed }: { bed: Bed }) {
+const triageLabel: Record<Triage, string> = {
+  immediate: "Immediate",
+  delayed: "Delayed",
+  minor: "Minor",
+};
+
+const triageBadge: Record<Triage, string> = {
+  immediate: "border-status-critical bg-status-critical/15 text-status-critical",
+  delayed: "border-status-occupied bg-status-occupied/15 text-status-occupied",
+  minor: "border-status-open bg-status-open/15 text-status-open",
+};
+
+const triageDot: Record<Triage, string> = {
+  immediate: "bg-status-critical",
+  delayed: "bg-status-occupied",
+  minor: "bg-status-open",
+};
+
+const DRAG_MIME = "application/x-tent-patient";
+
+type DragRef = { podId: string; bedId: string };
+
+function BedTile({
+  bed,
+  draggable,
+  dropTarget,
+  onDragStart,
+  onDrop,
+  onDragEnd,
+}: {
+  bed: Bed;
+  draggable: boolean;
+  dropTarget: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: () => void;
+}) {
+  const [over, setOver] = useState(false);
   return (
     <div
       title={`${bed.label} · ${statusLabel[bed.status]}${bed.bib ? ` · #${bed.bib}` : ""}`}
-      className={`flex aspect-square min-w-0 flex-col items-center justify-center rounded-sm border font-mono leading-none ${statusTile[bed.status]}`}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={
+        dropTarget
+          ? (e) => {
+              e.preventDefault();
+              setOver(true);
+            }
+          : undefined
+      }
+      onDragLeave={dropTarget ? () => setOver(false) : undefined}
+      onDrop={
+        dropTarget
+          ? (e) => {
+              e.preventDefault();
+              setOver(false);
+              onDrop?.(e);
+            }
+          : undefined
+      }
+      className={`flex aspect-square min-w-0 flex-col items-center justify-center rounded-sm border font-mono leading-none ${statusTile[bed.status]} ${
+        draggable ? "cursor-grab active:cursor-grabbing" : ""
+      } ${over ? "ring-2 ring-signal bg-signal/20" : ""}`}
     >
       {bed.bib ? (
-        <>
-          <span className="text-[11px] font-extrabold tracking-tight">{bed.bib}</span>
-          <span className="mt-0.5 text-[8px] font-bold opacity-70">{bed.since}</span>
-        </>
+        <span className="text-[13px] font-extrabold tracking-tight">{bed.bib}</span>
       ) : (
         <span className="text-[9px] font-bold uppercase tracking-tight">
           {bed.status === "cleaning" ? "CLR" : bed.label}
         </span>
       )}
+    </div>
+  );
+}
+
+function PatientCard({
+  bed,
+  onDragStart,
+  onDragEnd,
+}: {
+  bed: Bed;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+}) {
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      title="Drag to an open bed to move this patient"
+      className={`flex cursor-grab items-center gap-3 rounded-md border bg-secondary/40 px-3 py-2.5 active:cursor-grabbing ${
+        bed.status === "critical"
+          ? "border-status-critical/60"
+          : "border-border hover:border-muted-foreground"
+      }`}
+    >
+      <span className="shrink-0 font-mono text-2xl font-extrabold tracking-tight">
+        #{bed.bib}
+      </span>
+      <div className="min-w-0 flex-1">
+        {bed.triage && (
+          <span
+            className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest ${triageBadge[bed.triage]}`}
+          >
+            <span className={`size-1.5 rounded-full ${triageDot[bed.triage]}`} />
+            {triageLabel[bed.triage]}
+          </span>
+        )}
+        <p className="mt-1 truncate text-[11px] font-medium text-muted-foreground">
+          {bed.complaint ?? "—"}
+        </p>
+      </div>
+      <span className="shrink-0 font-mono text-[10px] font-bold uppercase text-muted-foreground">
+        {bed.label} · in {bed.since}
+      </span>
     </div>
   );
 }
@@ -48,12 +149,18 @@ function PodCard({
   setup,
   onSelect,
   onRemove,
+  onPatientDragStart,
+  onPatientDragEnd,
+  onPatientDrop,
 }: {
   pod: Pod;
   selected: boolean;
   setup: boolean;
   onSelect: () => void;
   onRemove: () => void;
+  onPatientDragStart: (bedId: string, e: React.DragEvent) => void;
+  onPatientDragEnd: () => void;
+  onPatientDrop: (bedId: string, e: React.DragEvent) => void;
 }) {
   const { open, critical, total } = podCounts(pod);
   return (
@@ -91,7 +198,18 @@ function PodCard({
 
         <div className="grid grid-cols-4 gap-1.5">
           {pod.beds.map((b) => (
-            <BedTile key={b.id} bed={b} />
+            <BedTile
+              key={b.id}
+              bed={b}
+              draggable={!setup && !!b.bib}
+              dropTarget={!setup && b.status === "open"}
+              onDragStart={(e) => {
+                e.stopPropagation();
+                onPatientDragStart(b.id, e);
+              }}
+              onDragEnd={onPatientDragEnd}
+              onDrop={(e) => onPatientDrop(b.id, e)}
+            />
           ))}
         </div>
 
@@ -120,15 +238,30 @@ function PodCard({
   );
 }
 
-function PodDetail({ pod, onClose }: { pod: Pod; onClose: () => void }) {
+function PodDetail({
+  pod,
+  onClose,
+  onPatientDragStart,
+  onPatientDragEnd,
+  onPatientDrop,
+}: {
+  pod: Pod;
+  onClose: () => void;
+  onPatientDragStart: (bedId: string, e: React.DragEvent) => void;
+  onPatientDragEnd: () => void;
+  onPatientDrop: (bedId: string, e: React.DragEvent) => void;
+}) {
   const { open, total } = podCounts(pod);
   const patients = pod.beds.filter((b) => b.bib);
+  const openBeds = pod.beds.filter((b) => b.status === "open");
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-signal bg-card p-4">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold tracking-tight">{pod.name}</h2>
-          <p className="text-[11px] text-muted-foreground">{pod.zone}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {pod.zone} · drag a patient card onto any open bed to move them
+          </p>
         </div>
         <button
           type="button"
@@ -159,6 +292,24 @@ function PodDetail({ pod, onClose }: { pod: Pod; onClose: () => void }) {
             {pod.capabilities.length > 0 ? pod.capabilities.join(", ") : "—"}
           </div>
         </div>
+        {openBeds.length > 0 && (
+          <div className="min-w-0">
+            <div className="text-[9px] font-bold uppercase text-muted-foreground">
+              Open bed drop targets
+            </div>
+            <div className="mt-1 flex gap-1.5">
+              {openBeds.map((b) => (
+                <BedTile
+                  key={b.id}
+                  bed={b}
+                  draggable={false}
+                  dropTarget
+                  onDrop={(e) => onPatientDrop(b.id, e)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -166,29 +317,12 @@ function PodDetail({ pod, onClose }: { pod: Pod; onClose: () => void }) {
           <p className="text-xs text-muted-foreground">No patients currently in this pod.</p>
         )}
         {patients.map((b) => (
-          <div
+          <PatientCard
             key={b.id}
-            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-sm border border-border bg-secondary/40 px-3 py-2"
-          >
-            <span className="w-8 shrink-0 font-mono text-xs font-bold text-muted-foreground">
-              {b.label}
-            </span>
-            <span className="min-w-0 truncate font-mono text-sm font-bold">
-              #{b.bib}
-              {b.note && (
-                <span className="ml-2 font-sans text-[11px] font-medium text-muted-foreground">
-                  {b.note}
-                </span>
-              )}
-            </span>
-            <span
-              className={`shrink-0 font-mono text-[10px] font-bold uppercase ${
-                b.status === "critical" ? "text-status-critical" : "text-status-occupied"
-              }`}
-            >
-              in {b.since}
-            </span>
-          </div>
+            bed={b}
+            onDragStart={(e) => onPatientDragStart(b.id, e)}
+            onDragEnd={onPatientDragEnd}
+          />
         ))}
       </div>
     </section>
@@ -201,7 +335,7 @@ function nextPodId(pods: Pod[]): string {
   return letters.find((l) => !used.has(l)) ?? `P${pods.length + 1}`;
 }
 
-const STORAGE_KEY = "tent-board-pods-v1";
+const STORAGE_KEY = "tent-board-pods-v2";
 
 function loadPods(): Pod[] {
   try {
@@ -222,6 +356,7 @@ export function TentBoard() {
   const [hydrated, setHydrated] = useState(false);
   const [newName, setNewName] = useState("");
   const [newZone, setNewZone] = useState("");
+  const [dragRef, setDragRef] = useState<DragRef | null>(null);
 
   useEffect(() => {
     setPods(loadPods());
@@ -256,6 +391,50 @@ export function TentBoard() {
   const removePod = (id: string) => {
     setPods((prev) => prev.filter((p) => p.id !== id));
     if (selectedPod === id) setSelectedPod(null);
+  };
+
+  const handleDragStart = (podId: string, bedId: string, e: React.DragEvent) => {
+    e.dataTransfer.setData(DRAG_MIME, JSON.stringify({ podId, bedId }));
+    e.dataTransfer.effectAllowed = "move";
+    setDragRef({ podId, bedId });
+  };
+
+  const handleDrop = (targetPodId: string, targetBedId: string, e: React.DragEvent) => {
+    const raw = e.dataTransfer.getData(DRAG_MIME);
+    const ref: DragRef | null = raw ? (JSON.parse(raw) as DragRef) : dragRef;
+    setDragRef(null);
+    if (!ref) return;
+    if (ref.podId === targetPodId && ref.bedId === targetBedId) return;
+
+    setPods((prev) => {
+      const sourcePod = prev.find((p) => p.id === ref.podId);
+      const targetPod = prev.find((p) => p.id === targetPodId);
+      const sourceBed = sourcePod?.beds.find((b) => b.id === ref.bedId);
+      const targetBed = targetPod?.beds.find((b) => b.id === targetBedId);
+      if (!sourcePod || !targetPod || !sourceBed || !targetBed || !sourceBed.bib) return prev;
+      if (targetBed.status !== "open") return prev;
+
+      const movedStatus: BedStatus = sourceBed.status === "critical" ? "critical" : "occupied";
+      return prev.map((p) => ({
+        ...p,
+        beds: p.beds.map((b) => {
+          if (p.id === ref.podId && b.id === ref.bedId) {
+            return { ...b, status: "open" as BedStatus, bib: undefined, since: undefined, triage: undefined, complaint: undefined };
+          }
+          if (p.id === targetPodId && b.id === targetBedId) {
+            return {
+              ...b,
+              status: movedStatus,
+              bib: sourceBed.bib,
+              since: sourceBed.since,
+              triage: sourceBed.triage,
+              complaint: sourceBed.complaint,
+            };
+          }
+          return b;
+        }),
+      }));
+    });
   };
 
   return (
@@ -399,14 +578,23 @@ export function TentBoard() {
                 setup={setup}
                 onSelect={() => !setup && setSelectedPod(selectedPod === p.id ? null : p.id)}
                 onRemove={() => removePod(p.id)}
+                onPatientDragStart={(bedId, e) => handleDragStart(p.id, bedId, e)}
+                onPatientDragEnd={() => setDragRef(null)}
+                onPatientDrop={(bedId, e) => handleDrop(p.id, bedId, e)}
               />
             ))}
           </div>
           {pod && !setup ? (
-            <PodDetail pod={pod} onClose={() => setSelectedPod(null)} />
+            <PodDetail
+              pod={pod}
+              onClose={() => setSelectedPod(null)}
+              onPatientDragStart={(bedId, e) => handleDragStart(pod.id, bedId, e)}
+              onPatientDragEnd={() => setDragRef(null)}
+              onPatientDrop={(bedId, e) => handleDrop(pod.id, bedId, e)}
+            />
           ) : !setup ? (
             <p className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Select a pod to see who is in each bed
+              Select a pod to see who is in each bed — drag patients onto any open bed to move them
             </p>
           ) : null}
         </section>
