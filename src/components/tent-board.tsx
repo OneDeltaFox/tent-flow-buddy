@@ -1,6 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Bed, BedStatus, Pod, Triage } from "@/lib/tent-data";
-import { BEDS_PER_POD, departures, emptyPod, incoming, initialPods } from "@/lib/tent-data";
+import type {
+  Bed,
+  BedStatus,
+  Disposition,
+  DispositionCategory,
+  Incoming,
+  Pod,
+  Triage,
+} from "@/lib/tent-data";
+import {
+  BEDS_PER_POD,
+  dispositionCategories,
+  emptyPod,
+  initialDispositions,
+  initialIncoming,
+  initialPods,
+} from "@/lib/tent-data";
 
 const statusTile: Record<BedStatus, string> = {
   open: "bg-status-open/15 border-status-open/50 text-status-open",
@@ -34,14 +49,130 @@ const triageDot: Record<Triage, string> = {
   minor: "bg-status-open",
 };
 
-const DRAG_MIME = "application/x-tent-patient";
+const incomingTone: Record<Triage, string> = {
+  immediate: "border-l-status-critical",
+  delayed: "border-l-status-occupied",
+  minor: "border-l-status-open",
+};
 
-type DragRef = { podId: string; bedId: string };
+const dispositionTone: Record<DispositionCategory, string> = {
+  returned: "border-status-open/70",
+  discharged: "border-muted-foreground/60",
+  ems: "border-status-critical/80",
+  hospital: "border-status-critical/80",
+  other: "border-signal/70",
+};
+
+const DRAG_MIME = "application/x-tent-patient";
+const PODS_STORAGE_KEY = "tent-board-pods-v3";
+const INCOMING_STORAGE_KEY = "tent-board-incoming-v1";
+const DISPOSITION_STORAGE_KEY = "tent-board-dispositions-v1";
+
+type DragRef =
+  | { kind: "bed"; podId: string; bedId: string }
+  | { kind: "incoming"; incomingId: string };
+
+type PatientSummary = {
+  bib: string;
+  triage?: Triage | undefined;
+  complaint?: string | undefined;
+  operationalStatus?: string | undefined;
+};
+
+function formatBoardTime() {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+}
+
+function loadStoredArray<T>(key: string, fallback: T[]): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as T[];
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseDragRef(raw: string): DragRef | null {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed.kind === "incoming" && typeof parsed.incomingId === "string") {
+      return { kind: "incoming", incomingId: parsed.incomingId };
+    }
+    if (
+      parsed.kind === "bed" &&
+      typeof parsed.podId === "string" &&
+      typeof parsed.bedId === "string"
+    ) {
+      return { kind: "bed", podId: parsed.podId, bedId: parsed.bedId };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function patientFromBed(bed: Bed): PatientSummary {
+  return {
+    bib: bed.bib ?? "",
+    triage: bed.triage,
+    complaint: bed.complaint,
+    operationalStatus: bed.operationalStatus,
+  };
+}
+
+function patientFromIncoming(patient: Incoming): PatientSummary {
+  return {
+    bib: patient.bib,
+    triage: patient.triage,
+    complaint: patient.complaint,
+    operationalStatus: patient.operationalStatus,
+  };
+}
+
+function clearBed(bed: Bed, status: BedStatus): Bed {
+  return {
+    ...bed,
+    status,
+    bib: undefined,
+    since: undefined,
+    triage: undefined,
+    complaint: undefined,
+    operationalStatus: undefined,
+  };
+}
+
+function statusForTriage(triage: Triage): BedStatus {
+  return triage === "immediate" ? "critical" : "occupied";
+}
+
+function dispositionRecord(
+  category: DispositionCategory,
+  patient: PatientSummary,
+  from: string,
+): Disposition {
+  return {
+    id: `${Date.now()}-${patient.bib}-${category}`,
+    bib: patient.bib,
+    category,
+    time: formatBoardTime(),
+    from,
+    triage: patient.triage,
+    complaint: patient.complaint,
+  };
+}
 
 function BedTile({
   bed,
   draggable,
   dropTarget,
+  className = "",
   onDragStart,
   onDrop,
   onDragEnd,
@@ -49,6 +180,7 @@ function BedTile({
   bed: Bed;
   draggable: boolean;
   dropTarget: boolean;
+  className?: string;
   onDragStart?: (e: React.DragEvent) => void;
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
@@ -56,7 +188,7 @@ function BedTile({
   const [over, setOver] = useState(false);
   return (
     <div
-      title={`${bed.label} · ${statusLabel[bed.status]}${bed.bib ? ` · #${bed.bib}` : ""}`}
+      title={`${bed.label} - ${statusLabel[bed.status]}${bed.bib ? ` - #${bed.bib}` : ""}`}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -80,7 +212,7 @@ function BedTile({
       }
       className={`flex aspect-square min-w-0 flex-col items-center justify-center rounded-sm border font-mono leading-none ${statusTile[bed.status]} ${
         draggable ? "cursor-grab active:cursor-grabbing" : ""
-      } ${over ? "ring-2 ring-signal bg-signal/20" : ""}`}
+      } ${over ? "ring-2 ring-signal bg-signal/20" : ""} ${className}`}
     >
       {bed.bib ? (
         <span className="text-[13px] font-extrabold tracking-tight">{bed.bib}</span>
@@ -94,11 +226,15 @@ function BedTile({
 }
 
 function PatientCard({
-  bed,
+  patient,
+  locationLabel,
+  title,
   onDragStart,
   onDragEnd,
 }: {
-  bed: Bed;
+  patient: PatientSummary;
+  locationLabel: string;
+  title: string;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
@@ -107,32 +243,62 @@ function PatientCard({
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      title="Drag to an open bed to move this patient"
+      title={title}
       className={`flex cursor-grab items-center gap-3 rounded-md border bg-secondary/40 px-3 py-2.5 active:cursor-grabbing ${
-        bed.status === "critical"
+        patient.triage === "immediate"
           ? "border-status-critical/60"
           : "border-border hover:border-muted-foreground"
       }`}
     >
       <span className="shrink-0 font-mono text-2xl font-extrabold tracking-tight">
-        #{bed.bib}
+        #{patient.bib}
       </span>
       <div className="min-w-0 flex-1">
-        {bed.triage && (
-          <span
-            className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest ${triageBadge[bed.triage]}`}
-          >
-            <span className={`size-1.5 rounded-full ${triageDot[bed.triage]}`} />
-            {triageLabel[bed.triage]}
-          </span>
-        )}
-        <p className="mt-1 truncate text-[11px] font-medium text-muted-foreground">
-          {bed.complaint ?? "—"}
+        <p className="truncate text-sm font-semibold text-foreground">
+          {patient.complaint ?? "Needs placement"}
         </p>
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+          {patient.triage && (
+            <span
+              className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest ${triageBadge[patient.triage]}`}
+            >
+              <span className={`size-1.5 rounded-full ${triageDot[patient.triage]}`} />
+              {triageLabel[patient.triage]}
+            </span>
+          )}
+          {patient.operationalStatus && (
+            <span className="truncate rounded-sm bg-background/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tight text-muted-foreground">
+              {patient.operationalStatus}
+            </span>
+          )}
+        </div>
       </div>
-      <span className="shrink-0 font-mono text-[10px] font-bold uppercase text-muted-foreground">
-        {bed.label} · in {bed.since}
+      <span className="shrink-0 text-right font-mono text-[10px] font-bold uppercase text-muted-foreground">
+        {locationLabel}
       </span>
+    </div>
+  );
+}
+
+function IncomingCard({
+  patient,
+  onDragStart,
+  onDragEnd,
+}: {
+  patient: Incoming;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+}) {
+  return (
+    <div className={`rounded-r-sm border-l-2 bg-secondary/40 p-2 ${incomingTone[patient.triage]}`}>
+      <PatientCard
+        patient={patientFromIncoming(patient)}
+        locationLabel={`ETA ${patient.eta}`}
+        title="Drag to an open bed or disposition bucket"
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      />
+      <p className="mt-1 truncate px-1 text-[11px] text-muted-foreground">{patient.source}</p>
     </div>
   );
 }
@@ -149,6 +315,7 @@ function PodCard({
   setup,
   onSelect,
   onRemove,
+  onNoteChange,
   onPatientDragStart,
   onPatientDragEnd,
   onPatientDrop,
@@ -158,6 +325,7 @@ function PodCard({
   setup: boolean;
   onSelect: () => void;
   onRemove: () => void;
+  onNoteChange: (note: string) => void;
   onPatientDragStart: (bedId: string, e: React.DragEvent) => void;
   onPatientDragEnd: () => void;
   onPatientDrop: (bedId: string, e: React.DragEvent) => void;
@@ -175,14 +343,18 @@ function PodCard({
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold tracking-tight">{pod.name}</h3>
+            <p className="truncate text-[10px] font-medium text-muted-foreground">{pod.zone}</p>
+            {pod.note && (
+              <p className="mt-1 truncate text-[10px] font-semibold text-signal">{pod.note}</p>
+            )}
             {pod.capabilities.length > 0 && (
               <div className="mt-1 flex flex-wrap gap-1">
-                {pod.capabilities.map((c) => (
+                {pod.capabilities.map((capability) => (
                   <span
-                    key={c}
+                    key={capability}
                     className="rounded-sm border border-border bg-secondary px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-tight text-muted-foreground"
                   >
-                    {c}
+                    {capability}
                   </span>
                 ))}
               </div>
@@ -197,25 +369,25 @@ function PodCard({
         </div>
 
         <div className="grid grid-cols-4 gap-1.5">
-          {pod.beds.map((b) => (
+          {pod.beds.map((bed) => (
             <BedTile
-              key={b.id}
-              bed={b}
-              draggable={!setup && !!b.bib}
-              dropTarget={!setup && b.status === "open"}
+              key={bed.id}
+              bed={bed}
+              draggable={!setup && !!bed.bib}
+              dropTarget={!setup && bed.status === "open"}
               onDragStart={(e) => {
                 e.stopPropagation();
-                onPatientDragStart(b.id, e);
+                onPatientDragStart(bed.id, e);
               }}
               onDragEnd={onPatientDragEnd}
-              onDrop={(e) => onPatientDrop(b.id, e)}
+              onDrop={(e) => onPatientDrop(bed.id, e)}
             />
           ))}
         </div>
 
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border pt-2">
           <span className="truncate text-[10px] font-medium text-muted-foreground">
-            {pod.staff.length > 0 ? pod.staff.join(" · ") : "No staff assigned"}
+            {pod.staff.length > 0 ? pod.staff.join(" - ") : "No staff assigned"}
           </span>
           {critical > 0 && (
             <span className="shrink-0 rounded-sm bg-status-critical/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-status-critical">
@@ -225,14 +397,22 @@ function PodCard({
         </div>
       </button>
       {setup && (
-        <button
-          type="button"
-          onClick={onRemove}
-          title="Remove pod"
-          className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full border border-status-critical bg-status-critical text-sm font-bold leading-none text-foreground hover:opacity-80"
-        >
-          ×
-        </button>
+        <div className="mt-2 flex gap-2">
+          <input
+            value={pod.note ?? ""}
+            onChange={(e) => onNoteChange(e.target.value)}
+            placeholder="Short pod note"
+            className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+          />
+          <button
+            type="button"
+            onClick={onRemove}
+            title="Remove pod"
+            className="flex size-8 shrink-0 items-center justify-center rounded-sm border border-status-critical bg-status-critical text-sm font-bold leading-none text-foreground hover:opacity-80"
+          >
+            x
+          </button>
+        </div>
       )}
     </div>
   );
@@ -241,27 +421,32 @@ function PodCard({
 function PodDetail({
   pod,
   onClose,
+  onClearBed,
   onPatientDragStart,
   onPatientDragEnd,
   onPatientDrop,
 }: {
   pod: Pod;
   onClose: () => void;
+  onClearBed: (bedId: string) => void;
   onPatientDragStart: (bedId: string, e: React.DragEvent) => void;
   onPatientDragEnd: () => void;
   onPatientDrop: (bedId: string, e: React.DragEvent) => void;
 }) {
   const { open, total } = podCounts(pod);
-  const patients = pod.beds.filter((b) => b.bib);
-  const openBeds = pod.beds.filter((b) => b.status === "open");
+  const patients = pod.beds.filter((bed) => bed.bib);
+  const openBeds = pod.beds.filter((bed) => bed.status === "open");
+  const cleaningBeds = pod.beds.filter((bed) => bed.status === "cleaning");
+
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-signal bg-card p-4">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold tracking-tight">{pod.name}</h2>
           <p className="text-[11px] text-muted-foreground">
-            {pod.zone} · drag a patient card onto any open bed to move them
+            {pod.zone} - drag a patient card onto any open bed to move them
           </p>
+          {pod.note && <p className="mt-1 text-[11px] font-semibold text-signal">{pod.note}</p>}
         </div>
         <button
           type="button"
@@ -283,13 +468,13 @@ function PodDetail({
         <div className="min-w-0">
           <div className="text-[9px] font-bold uppercase text-muted-foreground">Staff on pod</div>
           <div className="text-xs font-medium text-foreground">
-            {pod.staff.length > 0 ? pod.staff.join(", ") : "—"}
+            {pod.staff.length > 0 ? pod.staff.join(", ") : "-"}
           </div>
         </div>
         <div className="min-w-0">
           <div className="text-[9px] font-bold uppercase text-muted-foreground">Capabilities</div>
           <div className="text-xs font-medium text-foreground">
-            {pod.capabilities.length > 0 ? pod.capabilities.join(", ") : "—"}
+            {pod.capabilities.length > 0 ? pod.capabilities.join(", ") : "-"}
           </div>
         </div>
         {openBeds.length > 0 && (
@@ -298,13 +483,14 @@ function PodDetail({
               Open bed drop targets
             </div>
             <div className="mt-1 flex gap-1.5">
-              {openBeds.map((b) => (
+              {openBeds.map((bed) => (
                 <BedTile
-                  key={b.id}
-                  bed={b}
+                  key={bed.id}
+                  bed={bed}
                   draggable={false}
                   dropTarget
-                  onDrop={(e) => onPatientDrop(b.id, e)}
+                  className="size-9"
+                  onDrop={(e) => onPatientDrop(bed.id, e)}
                 />
               ))}
             </div>
@@ -316,177 +502,335 @@ function PodDetail({
         {patients.length === 0 && (
           <p className="text-xs text-muted-foreground">No patients currently in this pod.</p>
         )}
-        {patients.map((b) => (
+        {patients.map((bed) => (
           <PatientCard
-            key={b.id}
-            bed={b}
-            onDragStart={(e) => onPatientDragStart(b.id, e)}
+            key={bed.id}
+            patient={patientFromBed(bed)}
+            locationLabel={`${bed.label} - in ${bed.since ?? "--:--"}`}
+            title="Drag to another open bed or disposition bucket"
+            onDragStart={(e) => onPatientDragStart(bed.id, e)}
             onDragEnd={onPatientDragEnd}
           />
         ))}
       </div>
+
+      {cleaningBeds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Turnover
+          </span>
+          {cleaningBeds.map((bed) => (
+            <button
+              key={bed.id}
+              type="button"
+              onClick={() => onClearBed(bed.id)}
+              className="rounded-sm border border-border px-2 py-1 font-mono text-[10px] font-bold uppercase text-muted-foreground hover:border-status-open hover:text-status-open"
+            >
+              {bed.label} ready
+            </button>
+          ))}
+        </div>
+      )}
     </section>
+  );
+}
+
+function DispositionBucket({
+  category,
+  dispositions,
+  onDrop,
+}: {
+  category: (typeof dispositionCategories)[number];
+  dispositions: Disposition[];
+  onDrop: (category: DispositionCategory, e: React.DragEvent) => void;
+}) {
+  const [over, setOver] = useState(false);
+  const latest = dispositions.slice(0, 3);
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        onDrop(category.id, e);
+      }}
+      className={`rounded-md border bg-card/70 p-2.5 ${dispositionTone[category.id]} ${
+        over ? "ring-2 ring-signal bg-signal/10" : ""
+      }`}
+    >
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2">
+        <h3 className="truncate text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          {category.label}
+        </h3>
+        <span className="font-mono text-xl font-extrabold leading-none text-foreground">
+          {dispositions.length}
+        </span>
+      </div>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {latest.length === 0 && (
+          <p className="rounded-sm border border-dashed border-border px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-tight text-muted-foreground">
+            Drop here
+          </p>
+        )}
+        {latest.map((item) => (
+          <div key={item.id} className="border-t border-border pt-1.5 first:border-t-0 first:pt-0">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2">
+              <span className="truncate font-mono text-sm font-bold">#{item.bib}</span>
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                {item.time}
+              </span>
+            </div>
+            <p className="truncate text-[10px] font-medium text-muted-foreground">
+              {item.from}
+              {item.complaint ? ` - ${item.complaint}` : ""}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
 function nextPodId(pods: Pod[]): string {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  const used = new Set(pods.map((p) => p.id));
-  return letters.find((l) => !used.has(l)) ?? `P${pods.length + 1}`;
-}
-
-const STORAGE_KEY = "tent-board-pods-v2";
-
-function loadPods(): Pod[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return initialPods;
-    const parsed = JSON.parse(raw) as Pod[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return initialPods;
-    return parsed;
-  } catch {
-    return initialPods;
-  }
+  const used = new Set(pods.map((pod) => pod.id));
+  return letters.find((letter) => !used.has(letter)) ?? `P${pods.length + 1}`;
 }
 
 export function TentBoard() {
   const [selectedPod, setSelectedPod] = useState<string | null>(null);
   const [setup, setSetup] = useState(false);
   const [pods, setPods] = useState<Pod[]>(initialPods);
+  const [incomingQueue, setIncomingQueue] = useState<Incoming[]>(initialIncoming);
+  const [dispositions, setDispositions] = useState<Disposition[]>(initialDispositions);
   const [hydrated, setHydrated] = useState(false);
   const [newName, setNewName] = useState("");
   const [newZone, setNewZone] = useState("");
+  const [newNote, setNewNote] = useState("");
   const [dragRef, setDragRef] = useState<DragRef | null>(null);
 
   useEffect(() => {
-    setPods(loadPods());
+    setPods(loadStoredArray(PODS_STORAGE_KEY, initialPods));
+    setIncomingQueue(loadStoredArray(INCOMING_STORAGE_KEY, initialIncoming));
+    setDispositions(loadStoredArray(DISPOSITION_STORAGE_KEY, initialDispositions));
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(pods));
-  }, [pods, hydrated]);
+    if (!hydrated) return;
+    localStorage.setItem(PODS_STORAGE_KEY, JSON.stringify(pods));
+    localStorage.setItem(INCOMING_STORAGE_KEY, JSON.stringify(incomingQueue));
+    localStorage.setItem(DISPOSITION_STORAGE_KEY, JSON.stringify(dispositions));
+  }, [dispositions, hydrated, incomingQueue, pods]);
 
   const totals = useMemo(() => {
-    const all = pods.flatMap((p) => p.beds);
-    return {
-      open: all.filter((b) => b.status === "open").length,
-      total: all.length,
-      critical: all.filter((b) => b.status === "critical").length,
-      cleaning: all.filter((b) => b.status === "cleaning").length,
-    };
-  }, [pods]);
+    const all = pods.flatMap((pod) => pod.beds);
+    const currentCensus = all.filter((bed) => bed.bib).length;
+    const occupiedBeds = all.filter((bed) => bed.status === "occupied" || bed.status === "critical").length;
 
-  const pod = pods.find((p) => p.id === selectedPod) ?? null;
+    return {
+      currentCensus,
+      occupiedBeds,
+      open: all.filter((bed) => bed.status === "open").length,
+      totalBeds: all.length,
+      incoming: incomingQueue.length,
+      seenToday: currentCensus + dispositions.length,
+    };
+  }, [dispositions.length, incomingQueue.length, pods]);
+
+  const selected = pods.find((pod) => pod.id === selectedPod) ?? null;
+  const dispositionCounts = useMemo(
+    () =>
+      dispositionCategories.map((category) => ({
+        ...category,
+        dispositions: dispositions.filter((item) => item.category === category.id),
+      })),
+    [dispositions],
+  );
 
   const addPod = () => {
     const id = nextPodId(pods);
     const name = newName.trim() || `Pod ${id}`;
-    const newPod = emptyPod(id, name, newZone.trim() || "Unassigned zone");
+    const newPod = emptyPod(id, name, newZone.trim() || "Unassigned zone", newNote.trim());
     setPods((prev) => [...prev, newPod]);
     setNewName("");
     setNewZone("");
+    setNewNote("");
   };
 
   const removePod = (id: string) => {
-    setPods((prev) => prev.filter((p) => p.id !== id));
+    setPods((prev) => prev.filter((pod) => pod.id !== id));
     if (selectedPod === id) setSelectedPod(null);
   };
 
-  const handleDragStart = (podId: string, bedId: string, e: React.DragEvent) => {
-    e.dataTransfer.setData(DRAG_MIME, JSON.stringify({ podId, bedId }));
-    e.dataTransfer.effectAllowed = "move";
-    setDragRef({ podId, bedId });
+  const updatePodNote = (id: string, note: string) => {
+    setPods((prev) => prev.map((pod) => (pod.id === id ? { ...pod, note } : pod)));
   };
 
-  const handleDrop = (targetPodId: string, targetBedId: string, e: React.DragEvent) => {
+  const startDrag = (ref: DragRef, e: React.DragEvent) => {
+    e.dataTransfer.setData(DRAG_MIME, JSON.stringify(ref));
+    e.dataTransfer.effectAllowed = "move";
+    setDragRef(ref);
+  };
+
+  const readDropRef = (e: React.DragEvent) => {
     const raw = e.dataTransfer.getData(DRAG_MIME);
-    const ref: DragRef | null = raw ? (JSON.parse(raw) as DragRef) : dragRef;
+    return raw ? parseDragRef(raw) : dragRef;
+  };
+
+  const handleBedDrop = (targetPodId: string, targetBedId: string, e: React.DragEvent) => {
+    const ref = readDropRef(e);
     setDragRef(null);
     if (!ref) return;
+
+    const targetPod = pods.find((pod) => pod.id === targetPodId);
+    const targetBed = targetPod?.beds.find((bed) => bed.id === targetBedId);
+    if (!targetPod || targetBed?.status !== "open") return;
+
+    if (ref.kind === "incoming") {
+      const patient = incomingQueue.find((item) => item.id === ref.incomingId);
+      if (!patient) return;
+
+      setPods((prev) =>
+        prev.map((pod) => ({
+          ...pod,
+          beds: pod.beds.map((bed) =>
+            pod.id === targetPodId && bed.id === targetBedId
+              ? {
+                  ...bed,
+                  status: statusForTriage(patient.triage),
+                  bib: patient.bib,
+                  since: formatBoardTime(),
+                  triage: patient.triage,
+                  complaint: patient.complaint,
+                  operationalStatus: patient.operationalStatus,
+                }
+              : bed,
+          ),
+        })),
+      );
+      setIncomingQueue((prev) => prev.filter((item) => item.id !== ref.incomingId));
+      setSelectedPod(targetPodId);
+      return;
+    }
+
     if (ref.podId === targetPodId && ref.bedId === targetBedId) return;
 
-    setPods((prev) => {
-      const sourcePod = prev.find((p) => p.id === ref.podId);
-      const targetPod = prev.find((p) => p.id === targetPodId);
-      const sourceBed = sourcePod?.beds.find((b) => b.id === ref.bedId);
-      const targetBed = targetPod?.beds.find((b) => b.id === targetBedId);
-      if (!sourcePod || !targetPod || !sourceBed || !targetBed || !sourceBed.bib) return prev;
-      if (targetBed.status !== "open") return prev;
+    const sourcePod = pods.find((pod) => pod.id === ref.podId);
+    const sourceBed = sourcePod?.beds.find((bed) => bed.id === ref.bedId);
+    if (!sourcePod || !sourceBed?.bib) return;
 
-      const movedStatus: BedStatus = sourceBed.status === "critical" ? "critical" : "occupied";
-      return prev.map((p) => ({
-        ...p,
-        beds: p.beds.map((b) => {
-          if (p.id === ref.podId && b.id === ref.bedId) {
-            return { ...b, status: "open" as BedStatus, bib: undefined, since: undefined, triage: undefined, complaint: undefined };
+    setPods((prev) =>
+      prev.map((pod) => ({
+        ...pod,
+        beds: pod.beds.map((bed) => {
+          if (pod.id === ref.podId && bed.id === ref.bedId) {
+            return clearBed(bed, "open");
           }
-          if (p.id === targetPodId && b.id === targetBedId) {
+          if (pod.id === targetPodId && bed.id === targetBedId) {
             return {
-              ...b,
-              status: movedStatus,
+              ...bed,
+              status: sourceBed.status === "critical" ? "critical" : "occupied",
               bib: sourceBed.bib,
               since: sourceBed.since,
               triage: sourceBed.triage,
               complaint: sourceBed.complaint,
+              operationalStatus: sourceBed.operationalStatus,
             };
           }
-          return b;
+          return bed;
         }),
-      }));
-    });
+      })),
+    );
+    setSelectedPod(targetPodId);
   };
+
+  const handleDispositionDrop = (category: DispositionCategory, e: React.DragEvent) => {
+    const ref = readDropRef(e);
+    setDragRef(null);
+    if (!ref) return;
+
+    if (ref.kind === "incoming") {
+      const patient = incomingQueue.find((item) => item.id === ref.incomingId);
+      if (!patient) return;
+
+      setDispositions((prev) => [
+        dispositionRecord(category, patientFromIncoming(patient), patient.source),
+        ...prev,
+      ]);
+      setIncomingQueue((prev) => prev.filter((item) => item.id !== ref.incomingId));
+      return;
+    }
+
+    const sourcePod = pods.find((pod) => pod.id === ref.podId);
+    const sourceBed = sourcePod?.beds.find((bed) => bed.id === ref.bedId);
+    if (!sourcePod || !sourceBed?.bib) return;
+
+    setDispositions((prev) => [
+      dispositionRecord(category, patientFromBed(sourceBed), `${sourcePod.name} ${sourceBed.label}`),
+      ...prev,
+    ]);
+    setPods((prev) =>
+      prev.map((pod) => ({
+        ...pod,
+        beds: pod.beds.map((bed) =>
+          pod.id === ref.podId && bed.id === ref.bedId ? clearBed(bed, "cleaning") : bed,
+        ),
+      })),
+    );
+  };
+
+  const clearTurnoverBed = (podId: string, bedId: string) => {
+    setPods((prev) =>
+      prev.map((pod) => ({
+        ...pod,
+        beds: pod.beds.map((bed) =>
+          pod.id === podId && bed.id === bedId ? clearBed(bed, "open") : bed,
+        ),
+      })),
+    );
+  };
+
+  const summary = [
+    { label: "Current census", value: totals.currentCensus, tone: "text-foreground" },
+    { label: "Occupied beds", value: totals.occupiedBeds, tone: "text-status-occupied" },
+    { label: "Open beds", value: `${totals.open} / ${totals.totalBeds}`, tone: "text-status-open" },
+    { label: "Incoming", value: incomingQueue.length, tone: "text-signal" },
+    { label: "Seen today", value: totals.seenToday, tone: "text-foreground" },
+  ];
 
   return (
     <div className="flex min-h-screen flex-col gap-3 bg-background p-3 font-sans text-foreground lg:p-4">
-      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-lg border border-border bg-card px-4 py-3">
+      <header className="grid grid-cols-1 items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 xl:grid-cols-[minmax(0,1fr)_auto]">
         <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
           <div className="min-w-0">
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Medical Tent 1 — Charge Board
+              Medical Tent 1 - Charge Board
             </div>
             <h1 className="truncate text-lg font-semibold tracking-tight">Finish Line Medical</h1>
           </div>
-          <div className="flex gap-6 font-mono">
-            <div>
-              <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                Open beds
+          <div className="flex flex-wrap gap-5 font-mono">
+            {summary.map((item) => (
+              <div key={item.label}>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  {item.label}
+                </div>
+                <div className={`text-3xl font-extrabold leading-none ${item.tone}`}>
+                  {item.value}
+                </div>
               </div>
-              <div className="text-3xl font-extrabold leading-none text-status-open">
-                {totals.open}
-                <span className="text-lg text-muted-foreground"> / {totals.total}</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                Critical
-              </div>
-              <div className="text-3xl font-extrabold leading-none text-status-critical">
-                {String(totals.critical).padStart(2, "0")}
-              </div>
-            </div>
-            <div>
-              <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                Turning over
-              </div>
-              <div className="text-3xl font-extrabold leading-none text-muted-foreground">
-                {String(totals.cleaning).padStart(2, "0")}
-              </div>
-            </div>
-            <div>
-              <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                Pods
-              </div>
-              <div className="text-3xl font-extrabold leading-none text-foreground">
-                {String(pods.length).padStart(2, "0")}
-              </div>
-            </div>
+            ))}
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 flex-col items-start gap-2 xl:items-end">
           <button
             type="button"
-            onClick={() => setSetup((s) => !s)}
+            onClick={() => setSetup((enabled) => !enabled)}
             className={`rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
               setup
                 ? "border-signal bg-signal text-background"
@@ -495,12 +839,12 @@ export function TentBoard() {
           >
             {setup ? "Done" : "Edit layout"}
           </button>
-          <div className="flex flex-wrap justify-end gap-3">
-            {(["open", "occupied", "critical", "cleaning"] as BedStatus[]).map((s) => (
-              <div key={s} className="flex items-center gap-1.5">
-                <span className={`size-3 rounded-sm border ${statusTile[s]}`} />
+          <div className="flex flex-wrap gap-3 xl:justify-end">
+            {(["open", "occupied", "critical", "cleaning"] as BedStatus[]).map((status) => (
+              <div key={status} className="flex items-center gap-1.5">
+                <span className={`size-3 rounded-sm border ${statusTile[status]}`} />
                 <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                  {statusLabel[s]}
+                  {statusLabel[status]}
                 </span>
               </div>
             ))}
@@ -508,34 +852,24 @@ export function TentBoard() {
         </div>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[250px_minmax(0,1fr)_250px]">
+      <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
         <aside className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">
           <h2 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
             <span className="size-2 rounded-full bg-status-critical" />
             Incoming
           </h2>
-          {incoming.map((i) => (
-            <div
-              key={i.id}
-              className={`rounded-r-sm border-l-2 bg-secondary/50 p-2.5 ${
-                i.priority === "critical" ? "border-l-status-critical" : "border-l-status-cleaning"
-              }`}
-            >
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2">
-                <span className="truncate font-mono text-lg font-extrabold tracking-tight">
-                  #{i.bib}
-                </span>
-                <span
-                  className={`shrink-0 font-mono text-[10px] font-bold uppercase ${
-                    i.priority === "critical" ? "text-status-critical" : "text-muted-foreground"
-                  }`}
-                >
-                  ETA {i.eta}
-                </span>
-              </div>
-              <p className="truncate text-[11px] text-muted-foreground">{i.source}</p>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-tight">{i.note}</p>
-            </div>
+          {incomingQueue.length === 0 && (
+            <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Incoming queue clear
+            </p>
+          )}
+          {incomingQueue.map((patient) => (
+            <IncomingCard
+              key={patient.id}
+              patient={patient}
+              onDragStart={(e) => startDrag({ kind: "incoming", incomingId: patient.id }, e)}
+              onDragEnd={() => setDragRef(null)}
+            />
           ))}
         </aside>
 
@@ -548,14 +882,20 @@ export function TentBoard() {
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Name (e.g. Pod G — Wound Care)"
+                placeholder="Name (e.g. Pod G - Wound Care)"
                 className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
               />
               <input
                 value={newZone}
                 onChange={(e) => setNewZone(e.target.value)}
                 placeholder="Zone / location"
-                className="w-40 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                className="w-44 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+              />
+              <input
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                placeholder="Operational note"
+                className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
               />
               <button
                 type="button"
@@ -565,64 +905,55 @@ export function TentBoard() {
                 + Add
               </button>
               <span className="w-full text-[10px] text-muted-foreground">
-                In edit mode, tap the × on a pod to remove it from the tent.
+                In edit mode, patient movement is paused while the tent layout is adjusted.
               </span>
             </div>
           )}
           <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
-            {pods.map((p) => (
+            {pods.map((pod) => (
               <PodCard
-                key={p.id}
-                pod={p}
-                selected={selectedPod === p.id}
+                key={pod.id}
+                pod={pod}
+                selected={selectedPod === pod.id}
                 setup={setup}
-                onSelect={() => !setup && setSelectedPod(selectedPod === p.id ? null : p.id)}
-                onRemove={() => removePod(p.id)}
-                onPatientDragStart={(bedId, e) => handleDragStart(p.id, bedId, e)}
+                onSelect={() => !setup && setSelectedPod(selectedPod === pod.id ? null : pod.id)}
+                onRemove={() => removePod(pod.id)}
+                onNoteChange={(note) => updatePodNote(pod.id, note)}
+                onPatientDragStart={(bedId, e) => startDrag({ kind: "bed", podId: pod.id, bedId }, e)}
                 onPatientDragEnd={() => setDragRef(null)}
-                onPatientDrop={(bedId, e) => handleDrop(p.id, bedId, e)}
+                onPatientDrop={(bedId, e) => handleBedDrop(pod.id, bedId, e)}
               />
             ))}
           </div>
-          {pod && !setup ? (
+          {selected && !setup ? (
             <PodDetail
-              pod={pod}
+              pod={selected}
               onClose={() => setSelectedPod(null)}
-              onPatientDragStart={(bedId, e) => handleDragStart(pod.id, bedId, e)}
+              onClearBed={(bedId) => clearTurnoverBed(selected.id, bedId)}
+              onPatientDragStart={(bedId, e) =>
+                startDrag({ kind: "bed", podId: selected.id, bedId }, e)
+              }
               onPatientDragEnd={() => setDragRef(null)}
-              onPatientDrop={(bedId, e) => handleDrop(pod.id, bedId, e)}
+              onPatientDrop={(bedId, e) => handleBedDrop(selected.id, bedId, e)}
             />
           ) : !setup ? (
             <p className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Select a pod to see who is in each bed — drag patients onto any open bed to move them
+              Select a pod to see patient cards - drag incoming patients onto any open bed
             </p>
           ) : null}
         </section>
 
         <aside className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">
           <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Departed
+            Disposition
           </h2>
-          {departures.map((d) => (
-            <div key={d.id} className="border-b border-border pb-2 last:border-0">
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2">
-                <span className="truncate font-mono text-sm font-bold">#{d.bib}</span>
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                  {d.time}
-                </span>
-              </div>
-              <p
-                className={`text-[10px] font-bold uppercase tracking-tight ${
-                  d.kind === "transport"
-                    ? "text-status-critical"
-                    : d.kind === "moved"
-                      ? "text-signal"
-                      : "text-status-open"
-                }`}
-              >
-                {d.destination}
-              </p>
-            </div>
+          {dispositionCounts.map((category) => (
+            <DispositionBucket
+              key={category.id}
+              category={category}
+              dispositions={category.dispositions}
+              onDrop={handleDispositionDrop}
+            />
           ))}
         </aside>
       </main>
