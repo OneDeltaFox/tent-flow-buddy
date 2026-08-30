@@ -1,12 +1,15 @@
 export type BedStatus = "open" | "occupied" | "critical" | "cleaning";
 
+export type Triage = "immediate" | "delayed" | "minor";
+
 export type Bed = {
   id: string;
   label: string;
   status: BedStatus;
   bib?: string | undefined;
   since?: string | undefined;
-  note?: string | undefined;
+  triage?: Triage | undefined;
+  complaint?: string | undefined;
 };
 
 
@@ -41,9 +44,10 @@ function bed(
   status: BedStatus,
   bib?: string,
   since?: string,
-  note?: string,
+  triage?: Triage,
+  complaint?: string,
 ): Bed {
-  return { id: label, label, status, bib, since, note };
+  return { id: label, label, status, bib, since, triage, complaint };
 }
 
 export const BEDS_PER_POD = 4;
@@ -69,9 +73,9 @@ export const initialPods: Pod[] = [
     capabilities: ["IV Access", "Cooling", "ALS"],
     staff: ["MD Chen", "RN Miller", "RN Ortiz"],
     beds: [
-      bed("A1", "critical", "2201", "14:58", "Cooling immersion"),
-      bed("A2", "critical", "0009", "15:05", "Awaiting transport"),
-      bed("A3", "occupied", "0412", "14:10"),
+      bed("A1", "critical", "2201", "14:58", "immediate", "Heat stroke — cooling"),
+      bed("A2", "critical", "0009", "15:05", "immediate", "Collapse — awaiting transport"),
+      bed("A3", "occupied", "0412", "14:10", "delayed", "Heat exhaustion"),
       bed("A4", "open"),
     ],
   },
@@ -82,9 +86,9 @@ export const initialPods: Pod[] = [
     capabilities: ["IV Access", "Electrolytes"],
     staff: ["RN Sarah K.", "MA Diaz"],
     beds: [
-      bed("B1", "occupied", "0142", "14:20"),
-      bed("B2", "occupied", "0881", "14:35"),
-      bed("B3", "occupied", "0109", "14:42"),
+      bed("B1", "occupied", "0142", "14:20", "delayed", "Dehydration — IV running"),
+      bed("B2", "occupied", "0881", "14:35", "delayed", "Hyponatremia watch"),
+      bed("B3", "occupied", "0109", "14:42", "minor", "Cramping"),
       bed("B4", "open"),
     ],
   },
@@ -95,9 +99,9 @@ export const initialPods: Pod[] = [
     capabilities: ["Splinting", "Podiatry", "Wound Care"],
     staff: ["RN Patel", "Ortho Tech Wu"],
     beds: [
-      bed("C1", "occupied", "0992", "14:12"),
-      bed("C2", "occupied", "0045", "14:55"),
-      bed("C3", "occupied", "1282", "15:02"),
+      bed("C1", "occupied", "0992", "14:12", "delayed", "Ankle sprain"),
+      bed("C2", "occupied", "0045", "14:55", "minor", "Blister care"),
+      bed("C3", "occupied", "1282", "15:02", "delayed", "Knee pain — evaluating"),
       bed("C4", "open"),
     ],
   },
@@ -108,9 +112,9 @@ export const initialPods: Pod[] = [
     capabilities: ["Ice Bath x2", "Fans", "Rectal Temp"],
     staff: ["MA Nguyen"],
     beds: [
-      bed("D1", "occupied", "0733", "15:01"),
-      bed("D2", "occupied", "1190", "15:04"),
-      bed("D3", "occupied", "0318", "15:06"),
+      bed("D1", "occupied", "0733", "15:01", "immediate", "Heat — ice bath"),
+      bed("D2", "occupied", "1190", "15:04", "delayed", "Overheated — cooling"),
+      bed("D3", "occupied", "0318", "15:06", "delayed", "Dizziness — monitoring"),
       bed("D4", "open"),
     ],
   },
@@ -121,8 +125,8 @@ export const initialPods: Pod[] = [
     capabilities: ["Blister Care", "Abrasions", "Taping"],
     staff: ["RN Boone", "Volunteer x3"],
     beds: [
-      bed("E1", "occupied", "1044", "14:47"),
-      bed("E2", "occupied", "0620", "14:52"),
+      bed("E1", "occupied", "1044", "14:47", "minor", "Abrasions — road rash"),
+      bed("E2", "occupied", "0620", "14:52", "minor", "Chafing / taping"),
       bed("E3", "open"),
       bed("E4", "open"),
     ],
@@ -134,9 +138,9 @@ export const initialPods: Pod[] = [
     capabilities: ["Recliners", "Oral Fluids"],
     staff: ["RN Alvarez"],
     beds: [
-      bed("F1", "occupied", "0005", "14:33"),
-      bed("F2", "occupied", "0011", "14:36"),
-      bed("F3", "occupied", "0082", "14:41"),
+      bed("F1", "occupied", "0005", "14:33", "delayed", "Post-IV observation"),
+      bed("F2", "occupied", "0011", "14:36", "minor", "Nausea — oral fluids"),
+      bed("F3", "occupied", "0082", "14:41", "minor", "Fatigue — resting"),
       bed("F4", "open"),
     ],
   },
