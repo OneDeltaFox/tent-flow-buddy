@@ -229,22 +229,26 @@ function PatientCard({
   patient,
   locationLabel,
   title,
+  draggable = true,
   onDragStart,
   onDragEnd,
 }: {
   patient: PatientSummary;
   locationLabel: string;
   title: string;
+  draggable?: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      draggable={draggable}
+      onDragStart={draggable ? onDragStart : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
       title={title}
-      className={`flex cursor-grab items-center gap-3 rounded-md border bg-secondary/40 px-3 py-2.5 active:cursor-grabbing ${
+      className={`flex items-center gap-3 rounded-md border bg-secondary/40 px-3 py-2.5 ${
+        draggable ? "cursor-grab active:cursor-grabbing" : ""
+      } ${
         patient.triage === "immediate"
           ? "border-status-critical/60"
           : "border-border hover:border-muted-foreground"
@@ -282,10 +286,12 @@ function PatientCard({
 
 function IncomingCard({
   patient,
+  draggable,
   onDragStart,
   onDragEnd,
 }: {
   patient: Incoming;
+  draggable: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
@@ -294,7 +300,8 @@ function IncomingCard({
       <PatientCard
         patient={patientFromIncoming(patient)}
         locationLabel={`ETA ${patient.eta}`}
-        title="Drag to an open bed or disposition bucket"
+        title={draggable ? "Drag to an open bed or disposition bucket" : "Patient movement paused in edit layout"}
+        draggable={draggable}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       />
@@ -538,10 +545,12 @@ function PodDetail({
 function DispositionBucket({
   category,
   dispositions,
+  disabled,
   onDrop,
 }: {
   category: (typeof dispositionCategories)[number];
   dispositions: Disposition[];
+  disabled: boolean;
   onDrop: (category: DispositionCategory, e: React.DragEvent) => void;
 }) {
   const [over, setOver] = useState(false);
@@ -550,11 +559,13 @@ function DispositionBucket({
   return (
     <div
       onDragOver={(e) => {
+        if (disabled) return;
         e.preventDefault();
         setOver(true);
       }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => {
+        if (disabled) return;
         e.preventDefault();
         setOver(false);
         onDrop(category.id, e);
@@ -867,6 +878,7 @@ export function TentBoard() {
             <IncomingCard
               key={patient.id}
               patient={patient}
+              draggable={!setup}
               onDragStart={(e) => startDrag({ kind: "incoming", incomingId: patient.id }, e)}
               onDragEnd={() => setDragRef(null)}
             />
@@ -952,6 +964,7 @@ export function TentBoard() {
               key={category.id}
               category={category}
               dispositions={category.dispositions}
+              disabled={setup}
               onDrop={handleDispositionDrop}
             />
           ))}
