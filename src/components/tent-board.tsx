@@ -848,7 +848,7 @@ export function TentBoard() {
       prev.map((pod) => ({
         ...pod,
         beds: pod.beds.map((bed) => {
-          if (pod.id === ref.bedId) {
+          if (pod.id === ref.podId && bed.id === ref.bedId) {
             return clearBed(bed, "open");
           }
           if (pod.id === targetPodId && bed.id === targetBedId) {
