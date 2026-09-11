@@ -935,6 +935,7 @@ export function TentBoard() {
   const [incomingQueue, setIncomingQueue] = useState<Incoming[]>(initialIncoming);
   const [dispositions, setDispositions] = useState<Disposition[]>(initialDispositions);
   const [eventName, setEventName] = useState(DEFAULT_EVENT_NAME);
+  const [currentClock, setCurrentClock] = useState("--:--");
   const [hydrated, setHydrated] = useState(false);
   const [newName, setNewName] = useState("");
   const [newZone, setNewZone] = useState("");
@@ -982,6 +983,12 @@ export function TentBoard() {
     localStorage.setItem(DISPOSITION_STORAGE_KEY, JSON.stringify(dispositions));
     localStorage.setItem(EVENT_NAME_STORAGE_KEY, eventName);
   }, [dispositions, eventName, hydrated, incomingQueue, pods]);
+
+  useEffect(() => {
+    setCurrentClock(formatBoardTime());
+    const timer = window.setInterval(() => setCurrentClock(formatBoardTime()), 10_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const totals = useMemo(() => {
     const all = pods.flatMap((pod) => pod.beds);
@@ -1386,6 +1393,7 @@ export function TentBoard() {
   };
 
   const summary = [
+    { label: "Current time", value: currentClock, tone: "text-signal" },
     { label: "Current census", value: totals.currentCensus, tone: "text-foreground" },
     { label: "Occupied beds", value: totals.occupiedBeds, tone: "text-status-occupied" },
     { label: "Open beds", value: `${totals.open} / ${totals.totalBeds}`, tone: "text-status-open" },
