@@ -1124,6 +1124,9 @@ export function TentBoard() {
       return;
     }
 
+    const confirmed = window.confirm(`Remove ${pod.name} from the layout?`);
+    if (!confirmed) return;
+
     setPods((prev) => prev.filter((pod) => pod.id !== id));
     if (selectedPod === id) setSelectedPod(null);
     setLayoutMessage(`${pod.name} removed from layout.`);
@@ -1246,12 +1249,7 @@ export function TentBoard() {
     cancelPatientEdit();
   };
 
-  const clearRacePatients = () => {
-    const confirmed = window.confirm(
-      "Clear all active patients, incoming queue, and disposition counts for this race?",
-    );
-    if (!confirmed) return;
-
+  const clearPatientState = () => {
     setPods((prev) =>
       prev.map((pod) => ({
         ...pod,
@@ -1262,6 +1260,26 @@ export function TentBoard() {
     setDispositions([]);
     setSelectedPod(null);
     setEditPatient(null);
+    setDragRef(null);
+  };
+
+  const clearPatientData = () => {
+    const confirmed = window.confirm(
+      "Clear patient data? This removes active patients, incoming queue, and disposition counts. Pod layout and event name will stay.",
+    );
+    if (!confirmed) return;
+
+    clearPatientState();
+  };
+
+  const clearRace = () => {
+    const confirmed = window.confirm(
+      "Clear this race? This removes patient data and resets the event name. Pod layout, colors, capabilities, and closed/open pod settings will stay.",
+    );
+    if (!confirmed) return;
+
+    clearPatientState();
+    setEventName(DEFAULT_EVENT_NAME);
   };
 
   const startDrag = (ref: DragRef, e: React.DragEvent) => {
@@ -1442,7 +1460,14 @@ export function TentBoard() {
           </button>
           <button
             type="button"
-            onClick={clearRacePatients}
+            onClick={clearPatientData}
+            className="rounded-sm border border-status-occupied px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-occupied hover:bg-status-occupied hover:text-background"
+          >
+            Clear patient data
+          </button>
+          <button
+            type="button"
+            onClick={clearRace}
             className="rounded-sm border border-status-critical px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-critical hover:bg-status-critical hover:text-foreground"
           >
             Clear race
