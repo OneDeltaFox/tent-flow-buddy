@@ -89,6 +89,9 @@ const complaintOptions = [
   "Laceration",
   "Leg Pain/Inj",
   "Nausea/Vomiting",
+  "Near Syncope",
+  "Syncope",
+  "Unconscious",
   otherComplaintValue,
 ] as const;
 
