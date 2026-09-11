@@ -1518,27 +1518,31 @@ export function TentBoard() {
               onSubmit={addIncomingPatient}
               className="flex flex-col gap-2 rounded-md border border-signal/60 bg-card p-2"
             >
-              <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2">
-                <input
-                  value={newPatientBib}
-                  onChange={(e) => setNewPatientBib(e.target.value)}
-                  placeholder="Race #"
-                  className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                  required
-                />
-                <select
-                  value={newPatientTriage}
-                  onChange={(e) => setNewPatientTriage(e.target.value as Triage)}
-                  aria-label="Triage"
-                  className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                >
-                  {triageOptions.map((triage) => (
-                    <option key={triage} value={triage}>
-                      {triageLabel[triage]}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <input
+                value={newPatientBib}
+                onChange={(e) => setNewPatientBib(e.target.value)}
+                placeholder="Race #"
+                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                required
+              />
+              <ComplaintField
+                choice={newPatientComplaintChoice}
+                other={newPatientOtherComplaint}
+                onChoiceChange={setNewPatientComplaintChoice}
+                onOtherChange={setNewPatientOtherComplaint}
+              />
+              <input
+                value={newPatientStatus}
+                onChange={(e) => setNewPatientStatus(e.target.value)}
+                placeholder="Operational status"
+                className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+              />
+              <input
+                value={newPatientSource}
+                onChange={(e) => setNewPatientSource(e.target.value)}
+                placeholder="Source"
+                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+              />
               <div className="rounded-sm border border-border bg-background/60 p-2">
                 <label className="block text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
                   Assign Pod
@@ -1561,25 +1565,19 @@ export function TentBoard() {
                   })}
                 </select>
               </div>
-              <ComplaintField
-                choice={newPatientComplaintChoice}
-                other={newPatientOtherComplaint}
-                onChoiceChange={setNewPatientComplaintChoice}
-                onOtherChange={setNewPatientOtherComplaint}
-              />
-              <input
-                value={newPatientStatus}
-                onChange={(e) => setNewPatientStatus(e.target.value)}
-                placeholder="Operational status"
-                className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-              />
               <div className="grid grid-cols-[minmax(0,1fr)_80px] gap-2">
-                <input
-                  value={newPatientSource}
-                  onChange={(e) => setNewPatientSource(e.target.value)}
-                  placeholder="Source"
-                  className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                />
+                <select
+                  value={newPatientTriage}
+                  onChange={(e) => setNewPatientTriage(e.target.value as Triage)}
+                  aria-label="Triage"
+                  className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                >
+                  {triageOptions.map((triage) => (
+                    <option key={triage} value={triage}>
+                      {triageLabel[triage]}
+                    </option>
+                  ))}
+                </select>
                 <input
                   value={newPatientEta}
                   onChange={(e) => setNewPatientEta(e.target.value)}
