@@ -19,6 +19,7 @@ export type Pod = {
   zone: string;
   note?: string | undefined;
   color: string;
+  closed?: boolean | undefined;
   capabilities: string[];
   staff: string[];
   beds: Bed[];

@@ -57,6 +57,13 @@ const incomingTone: Record<Triage, string> = {
   minor: "border-l-status-open",
 };
 
+const triageBedTile: Record<Triage, string> = {
+  untriaged: "bg-muted/70 border-muted-foreground/60 text-foreground",
+  immediate: "bg-status-critical border-status-critical text-foreground",
+  delayed: "bg-status-occupied border-status-occupied text-background",
+  minor: "bg-status-open border-status-open text-background",
+};
+
 const dispositionTone: Record<DispositionCategory, string> = {
   discharged: "border-muted-foreground/60",
   ems: "border-status-critical/80",
@@ -65,6 +72,25 @@ const dispositionTone: Record<DispositionCategory, string> = {
 
 const triageOptions: Triage[] = ["untriaged", "immediate", "delayed", "minor"];
 const podColorOptions = ["#ef4444", "#f59e0b", "#22c55e", "#06b6d4", "#8b5cf6", "#ec4899"];
+const otherComplaintValue = "other";
+const complaintOptions = [
+  "abd pain",
+  "arm pain/inj",
+  "bleeding",
+  "chest pain",
+  "dif. breathing",
+  "dizziness",
+  "foot pain/inj",
+  "gen. weakness",
+  "hand pain/inj",
+  "head pain",
+  "heat exhaustion",
+  "knee pain/inj",
+  "laceration",
+  "leg pain/inj",
+  "nausea/vomiting",
+  otherComplaintValue,
+] as const;
 
 const DRAG_MIME = "application/x-tent-patient";
 const PODS_STORAGE_KEY = "tent-board-pods-v3";
@@ -135,6 +161,8 @@ function normalizeStoredPods(pods: Pod[]): Pod[] {
     ...pod,
     color:
       typeof pod.color === "string" ? pod.color : podColorOptions[index % podColorOptions.length],
+    closed: pod.closed === true,
+    capabilities: Array.isArray(pod.capabilities) ? pod.capabilities : [],
     beds: pod.beds.map((bed) => ({
       ...bed,
       status: normalizeBedStatus(bed.status),
@@ -155,6 +183,34 @@ function normalizeStoredDispositions(dispositions: Disposition[]): Disposition[]
     dispositionCategories.map((category) => category.id),
   );
   return dispositions.filter((item): item is Disposition => supported.has(item.category));
+}
+
+function parseCapabilities(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function isComplaintOption(value: string): value is (typeof complaintOptions)[number] {
+  return complaintOptions.some((option) => option === value);
+}
+
+function complaintSelectionFor(complaint: string | undefined) {
+  if (complaint && isComplaintOption(complaint)) {
+    return { choice: complaint, other: "" };
+  }
+
+  return { choice: complaint ? otherComplaintValue : "", other: complaint ?? "" };
+}
+
+function complaintFromSelection(choice: string, other: string) {
+  if (choice === otherComplaintValue) return other.trim();
+  return choice.trim();
 }
 
 function parseDragRef(raw: string): DragRef | null {
@@ -224,8 +280,8 @@ function dispositionRecord(
 }
 
 function bedTileTone(bed: Bed) {
-  if (bed.status === "occupied" && bed.triage === "immediate") {
-    return "bg-status-critical border-status-critical text-foreground";
+  if (bed.status === "occupied" && bed.triage) {
+    return triageBedTile[bed.triage];
   }
 
   return statusTile[bed.status];
@@ -354,10 +410,50 @@ function PatientCard({
             e.stopPropagation();
             onEdit();
           }}
-          className="shrink-0 rounded-sm border border-border px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+          className="shrink-0 rounded-sm border border-signal bg-signal px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
         >
           Edit
         </button>
+      )}
+    </div>
+  );
+}
+
+function ComplaintField({
+  choice,
+  other,
+  onChoiceChange,
+  onOtherChange,
+}: {
+  choice: string;
+  other: string;
+  onChoiceChange: (value: string) => void;
+  onOtherChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <select
+        value={choice}
+        onChange={(e) => onChoiceChange(e.target.value)}
+        aria-label="Chief complaint"
+        className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-signal"
+        required
+      >
+        <option value="">Chief complaint</option>
+        {complaintOptions.map((complaint) => (
+          <option key={complaint} value={complaint}>
+            {complaint === otherComplaintValue ? "other" : complaint}
+          </option>
+        ))}
+      </select>
+      {choice === otherComplaintValue && (
+        <input
+          value={other}
+          onChange={(e) => onOtherChange(e.target.value)}
+          placeholder="Enter complaint"
+          className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+          required
+        />
       )}
     </div>
   );
@@ -396,7 +492,7 @@ function IncomingCard({
 }
 
 function podCounts(pod: Pod) {
-  const open = pod.beds.filter((b) => b.status === "open").length;
+  const open = pod.closed ? 0 : pod.beds.filter((b) => b.status === "open").length;
   const immediate = pod.beds.filter((b) => b.bib && b.triage === "immediate").length;
   return { open, immediate, total: pod.beds.length };
 }
@@ -409,6 +505,8 @@ function PodCard({
   onRemove,
   onNoteChange,
   onColorChange,
+  onClosedChange,
+  onCapabilitiesChange,
   onPatientDragStart,
   onPatientDragEnd,
   onPatientDrop,
@@ -420,6 +518,8 @@ function PodCard({
   onRemove: () => void;
   onNoteChange: (note: string) => void;
   onColorChange: (color: string) => void;
+  onClosedChange: (closed: boolean) => void;
+  onCapabilitiesChange: (capabilities: string) => void;
   onPatientDragStart: (bedId: string, e: React.DragEvent) => void;
   onPatientDragEnd: () => void;
   onPatientDrop: (bedId: string, e: React.DragEvent) => void;
@@ -443,6 +543,11 @@ function PodCard({
             <p className="truncate text-[10px] font-medium text-muted-foreground">{pod.zone}</p>
             {pod.note && (
               <p className="mt-1 truncate text-[10px] font-semibold text-signal">{pod.note}</p>
+            )}
+            {pod.closed && (
+              <span className="mt-1 inline-flex rounded-sm border border-status-critical bg-status-critical/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-status-critical">
+                Closed
+              </span>
             )}
             {pod.capabilities.length > 0 && (
               <div className="mt-1 flex flex-wrap gap-1">
@@ -473,7 +578,8 @@ function PodCard({
               key={bed.id}
               bed={bed}
               draggable={!setup && !!bed.bib}
-              dropTarget={!setup && bed.status === "open"}
+              dropTarget={!setup && !pod.closed && bed.status === "open"}
+              className={pod.closed && !bed.bib ? "opacity-35" : ""}
               onDragStart={(e) => {
                 e.stopPropagation();
                 onPatientDragStart(bed.id, e);
@@ -488,15 +594,19 @@ function PodCard({
           <span className="truncate text-[10px] font-medium text-muted-foreground">
             {pod.staff.length > 0 ? pod.staff.join(" - ") : "No staff assigned"}
           </span>
-          {immediate > 0 && (
+          {pod.closed ? (
+            <span className="shrink-0 rounded-sm bg-status-critical/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-status-critical">
+              closed
+            </span>
+          ) : immediate > 0 ? (
             <span className="shrink-0 rounded-sm bg-status-critical/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-status-critical">
               {immediate} red
             </span>
-          )}
+          ) : null}
         </div>
       </button>
       {setup && (
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
           <input
             type="color"
             value={pod.color}
@@ -510,6 +620,24 @@ function PodCard({
             placeholder="Short pod note"
             className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
           />
+          <input
+            value={pod.capabilities.join(", ")}
+            onChange={(e) => onCapabilitiesChange(e.target.value)}
+            placeholder="Capabilities"
+            className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+          />
+          <button
+            type="button"
+            onClick={() => onClosedChange(!pod.closed)}
+            title={pod.closed ? "Reopen pod" : "Close pod"}
+            className={`h-8 shrink-0 rounded-sm border px-2 text-[10px] font-bold uppercase tracking-widest ${
+              pod.closed
+                ? "border-status-open bg-status-open text-background hover:opacity-90"
+                : "border-status-critical bg-status-critical text-foreground hover:opacity-90"
+            }`}
+          >
+            {pod.closed ? "Open" : "Close"}
+          </button>
           <button
             type="button"
             onClick={onRemove}
@@ -543,7 +671,7 @@ function PodDetail({
 }) {
   const { open, total } = podCounts(pod);
   const patients = pod.beds.filter((bed) => bed.bib);
-  const openBeds = pod.beds.filter((bed) => bed.status === "open");
+  const openBeds = pod.closed ? [] : pod.beds.filter((bed) => bed.status === "open");
   const cleaningBeds = pod.beds.filter((bed) => bed.status === "cleaning");
 
   return (
@@ -555,7 +683,10 @@ function PodDetail({
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold tracking-tight">{pod.name}</h2>
           <p className="text-[11px] text-muted-foreground">
-            {pod.zone} - drag a patient card onto any open bed to move them
+            {pod.zone} -{" "}
+            {pod.closed
+              ? "closed to new assignments"
+              : "drag a patient card onto any open bed to move them"}
           </p>
           {pod.note && <p className="mt-1 text-[11px] font-semibold text-signal">{pod.note}</p>}
         </div>
@@ -576,12 +707,14 @@ function PodDetail({
             <span className="text-sm text-muted-foreground"> / {total}</span>
           </div>
         </div>
-        <div className="min-w-0">
-          <div className="text-[9px] font-bold uppercase text-muted-foreground">Staff on pod</div>
-          <div className="text-xs font-medium text-foreground">
-            {pod.staff.length > 0 ? pod.staff.join(", ") : "-"}
+        {pod.closed && (
+          <div>
+            <div className="text-[9px] font-bold uppercase text-muted-foreground">Pod status</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-status-critical">
+              Closed
+            </div>
           </div>
-        </div>
+        )}
         <div className="min-w-0">
           <div className="text-[9px] font-bold uppercase text-muted-foreground">Capabilities</div>
           <div className="text-xs font-medium text-foreground">
@@ -738,11 +871,14 @@ export function TentBoard() {
   const [newName, setNewName] = useState("");
   const [newZone, setNewZone] = useState("");
   const [newNote, setNewNote] = useState("");
+  const [newCapabilities, setNewCapabilities] = useState("");
   const [newColor, setNewColor] = useState(podColorOptions[0]);
+  const [newPodCount, setNewPodCount] = useState("1");
   const [addingPatient, setAddingPatient] = useState(false);
   const [newPatientBib, setNewPatientBib] = useState("");
   const [newPatientTriage, setNewPatientTriage] = useState<Triage>("untriaged");
-  const [newPatientComplaint, setNewPatientComplaint] = useState("");
+  const [newPatientComplaintChoice, setNewPatientComplaintChoice] = useState("");
+  const [newPatientOtherComplaint, setNewPatientOtherComplaint] = useState("");
   const [newPatientStatus, setNewPatientStatus] = useState("");
   const [newPatientSource, setNewPatientSource] = useState("");
   const [newPatientEta, setNewPatientEta] = useState("");
@@ -751,7 +887,8 @@ export function TentBoard() {
   const [editPatient, setEditPatient] = useState<EditPatientRef | null>(null);
   const [editPatientBib, setEditPatientBib] = useState("");
   const [editPatientTriage, setEditPatientTriage] = useState<Triage>("untriaged");
-  const [editPatientComplaint, setEditPatientComplaint] = useState("");
+  const [editPatientComplaintChoice, setEditPatientComplaintChoice] = useState("");
+  const [editPatientOtherComplaint, setEditPatientOtherComplaint] = useState("");
   const [editPatientStatus, setEditPatientStatus] = useState("");
   const [editPatientPod, setEditPatientPod] = useState("");
   const [editPatientMessage, setEditPatientMessage] = useState("");
@@ -780,14 +917,15 @@ export function TentBoard() {
 
   const totals = useMemo(() => {
     const all = pods.flatMap((pod) => pod.beds);
+    const activeBeds = pods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
     const currentCensus = all.filter((bed) => bed.bib).length;
     const occupiedBeds = all.filter((bed) => bed.status === "occupied").length;
 
     return {
       currentCensus,
       occupiedBeds,
-      open: all.filter((bed) => bed.status === "open").length,
-      totalBeds: all.length,
+      open: activeBeds.filter((bed) => bed.status === "open").length,
+      totalBeds: activeBeds.length,
       incoming: incomingQueue.length,
       seenToday: currentCensus + dispositions.length,
     };
@@ -804,27 +942,37 @@ export function TentBoard() {
   );
 
   const addPod = () => {
-    const id = nextPodId(pods);
-    const name = newName.trim() || `Pod ${id}`;
-    const newPod = emptyPod(
-      id,
-      name,
-      newZone.trim() || "Unassigned zone",
-      newNote.trim(),
-      newColor,
-    );
-    setPods((prev) => [...prev, newPod]);
+    const count = Math.max(1, Math.min(Number.parseInt(newPodCount, 10) || 1, 12));
+    const baseName = newName.trim();
+    const capabilities = parseCapabilities(newCapabilities);
+    const nextPods = [...pods];
+    const addedPods: Pod[] = [];
+
+    for (let i = 0; i < count; i += 1) {
+      const id = nextPodId(nextPods);
+      const name = baseName ? (count > 1 ? `${baseName} ${id}` : baseName) : `Pod ${id}`;
+      const pod = emptyPod(id, name, newZone.trim() || "Unassigned zone", newNote.trim(), newColor);
+      pod.capabilities = capabilities;
+      nextPods.push(pod);
+      addedPods.push(pod);
+    }
+
+    setPods(nextPods);
     setLayoutMessage("");
     setNewName("");
     setNewZone("");
     setNewNote("");
-    setNewColor(podColorOptions[(pods.length + 1) % podColorOptions.length]);
+    setNewCapabilities("");
+    setNewPodCount("1");
+    setNewColor(podColorOptions[nextPods.length % podColorOptions.length]);
+    if (addedPods.length > 0) setSelectedPod(addedPods[0].id);
   };
 
   const resetPatientForm = () => {
     setNewPatientBib("");
     setNewPatientTriage("untriaged");
-    setNewPatientComplaint("");
+    setNewPatientComplaintChoice("");
+    setNewPatientOtherComplaint("");
     setNewPatientStatus("");
     setNewPatientSource("");
     setNewPatientEta("");
@@ -835,7 +983,7 @@ export function TentBoard() {
     e.preventDefault();
 
     const bib = newPatientBib.trim();
-    const complaint = newPatientComplaint.trim();
+    const complaint = complaintFromSelection(newPatientComplaintChoice, newPatientOtherComplaint);
     if (!bib || !complaint) return;
     setNewPatientMessage("");
 
@@ -851,7 +999,9 @@ export function TentBoard() {
 
     if (newPatientAssignPod) {
       const targetPod = pods.find((pod) => pod.id === newPatientAssignPod);
-      const targetBed = targetPod?.beds.find((bed) => bed.status === "open");
+      const targetBed = targetPod?.closed
+        ? undefined
+        : targetPod?.beds.find((bed) => bed.status === "open");
 
       if (targetPod && targetBed) {
         setPods((prev) =>
@@ -878,7 +1028,9 @@ export function TentBoard() {
         return;
       }
 
-      setNewPatientMessage("Selected pod has no open beds. Patient was left in Incoming.");
+      setNewPatientMessage(
+        "Selected pod is closed or has no open beds. Patient was left in Incoming.",
+      );
     }
 
     setIncomingQueue((prev) => [patient, ...prev]);
@@ -910,12 +1062,27 @@ export function TentBoard() {
     setPods((prev) => prev.map((pod) => (pod.id === id ? { ...pod, color } : pod)));
   };
 
+  const updatePodClosed = (id: string, closed: boolean) => {
+    setPods((prev) => prev.map((pod) => (pod.id === id ? { ...pod, closed } : pod)));
+    setLayoutMessage(closed ? "Pod closed to new assignments." : "Pod reopened.");
+  };
+
+  const updatePodCapabilities = (id: string, capabilities: string) => {
+    setPods((prev) =>
+      prev.map((pod) =>
+        pod.id === id ? { ...pod, capabilities: parseCapabilities(capabilities) } : pod,
+      ),
+    );
+  };
+
   const startPatientEdit = (podId: string, bed: Bed) => {
     if (!bed.bib) return;
+    const complaint = complaintSelectionFor(bed.complaint);
     setEditPatient({ podId, bedId: bed.id });
     setEditPatientBib(bed.bib);
     setEditPatientTriage(bed.triage ?? "untriaged");
-    setEditPatientComplaint(bed.complaint ?? "");
+    setEditPatientComplaintChoice(complaint.choice);
+    setEditPatientOtherComplaint(complaint.other);
     setEditPatientStatus(bed.operationalStatus ?? "");
     setEditPatientPod(podId);
     setEditPatientMessage("");
@@ -938,11 +1105,17 @@ export function TentBoard() {
     const updated = {
       bib: editPatientBib.trim() || currentBed.bib,
       triage: editPatientTriage,
-      complaint: editPatientComplaint.trim() || undefined,
+      complaint:
+        complaintFromSelection(editPatientComplaintChoice, editPatientOtherComplaint) || undefined,
       operationalStatus: editPatientStatus.trim() || undefined,
     };
 
     if (editPatientPod !== editPatient.podId) {
+      if (targetPod.closed) {
+        setEditPatientMessage(`${targetPod.name} is closed to new assignments.`);
+        return;
+      }
+
       const targetBed = targetPod.beds.find((bed) => bed.status === "open");
       if (!targetBed) {
         setEditPatientMessage(`${targetPod.name} has no open beds.`);
@@ -1022,7 +1195,7 @@ export function TentBoard() {
 
     const targetPod = pods.find((pod) => pod.id === targetPodId);
     const targetBed = targetPod?.beds.find((bed) => bed.id === targetBedId);
-    if (!targetPod || targetBed?.status !== "open") return;
+    if (!targetPod || targetPod.closed || targetBed?.status !== "open") return;
 
     if (ref.kind === "incoming") {
       const patient = incomingQueue.find((item) => item.id === ref.incomingId);
@@ -1174,7 +1347,7 @@ export function TentBoard() {
             className={`rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
               setup
                 ? "border-signal bg-signal text-background"
-                : "border-border text-muted-foreground hover:text-foreground"
+                : "border-signal bg-signal px-3 py-1.5 text-background hover:opacity-90"
             }`}
           >
             {setup ? "Done" : "Edit layout"}
@@ -1187,11 +1360,19 @@ export function TentBoard() {
             Clear race
           </button>
           <div className="flex flex-wrap gap-3 xl:justify-end">
-            {(["open", "occupied", "cleaning"] as BedStatus[]).map((status) => (
+            {(["open", "cleaning"] as BedStatus[]).map((status) => (
               <div key={status} className="flex items-center gap-1.5">
                 <span className={`size-3 rounded-sm border ${statusTile[status]}`} />
                 <span className="text-[10px] font-semibold uppercase text-muted-foreground">
                   {statusLabel[status]}
+                </span>
+              </div>
+            ))}
+            {triageOptions.map((triage) => (
+              <div key={triage} className="flex items-center gap-1.5">
+                <span className={`size-3 rounded-sm border ${triageBedTile[triage]}`} />
+                <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                  {triageLabel[triage]}
                 </span>
               </div>
             ))}
@@ -1256,21 +1437,22 @@ export function TentBoard() {
                 >
                   <option value="">Incoming queue</option>
                   {pods.map((pod) => {
-                    const open = pod.beds.filter((bed) => bed.status === "open").length;
+                    const open = pod.closed
+                      ? 0
+                      : pod.beds.filter((bed) => bed.status === "open").length;
                     return (
-                      <option key={pod.id} value={pod.id} disabled={open === 0}>
-                        {pod.name} ({open} open)
+                      <option key={pod.id} value={pod.id} disabled={pod.closed || open === 0}>
+                        {pod.name} {pod.closed ? "(closed)" : `(${open} open)`}
                       </option>
                     );
                   })}
                 </select>
               </div>
-              <input
-                value={newPatientComplaint}
-                onChange={(e) => setNewPatientComplaint(e.target.value)}
-                placeholder="Chief complaint"
-                className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                required
+              <ComplaintField
+                choice={newPatientComplaintChoice}
+                other={newPatientOtherComplaint}
+                onChoiceChange={setNewPatientComplaintChoice}
+                onOtherChange={setNewPatientOtherComplaint}
               />
               <input
                 value={newPatientStatus}
@@ -1354,6 +1536,21 @@ export function TentBoard() {
                 className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
               />
               <input
+                value={newCapabilities}
+                onChange={(e) => setNewCapabilities(e.target.value)}
+                placeholder="Capabilities"
+                className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+              />
+              <input
+                type="number"
+                min={1}
+                max={12}
+                value={newPodCount}
+                onChange={(e) => setNewPodCount(e.target.value)}
+                aria-label="Number of pods"
+                className="w-20 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+              />
+              <input
                 type="color"
                 value={newColor}
                 onChange={(e) => setNewColor(e.target.value)}
@@ -1365,7 +1562,7 @@ export function TentBoard() {
                 onClick={addPod}
                 className="rounded-sm border border-signal bg-signal px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
               >
-                + Add
+                Add pod
               </button>
               <span className="w-full text-[10px] text-muted-foreground">
                 In edit mode, patient movement is paused while the tent layout is adjusted.
@@ -1388,6 +1585,8 @@ export function TentBoard() {
                 onRemove={() => removePod(pod.id)}
                 onNoteChange={(note) => updatePodNote(pod.id, note)}
                 onColorChange={(color) => updatePodColor(pod.id, color)}
+                onClosedChange={(closed) => updatePodClosed(pod.id, closed)}
+                onCapabilitiesChange={(capabilities) => updatePodCapabilities(pod.id, capabilities)}
                 onPatientDragStart={(bedId, e) =>
                   startDrag({ kind: "bed", podId: pod.id, bedId }, e)
                 }
@@ -1399,7 +1598,7 @@ export function TentBoard() {
           {editPatient && !setup && (
             <form
               onSubmit={savePatientEdit}
-              className="grid gap-2 rounded-lg border border-signal bg-card p-3 md:grid-cols-[100px_120px_minmax(0,1fr)_minmax(0,1fr)_180px_auto]"
+              className="grid gap-2 rounded-lg border border-signal bg-card p-3 md:grid-cols-[100px_120px_minmax(0,1.15fr)_minmax(0,1fr)_180px_auto]"
             >
               <div className="md:col-span-6">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -1425,11 +1624,11 @@ export function TentBoard() {
                   </option>
                 ))}
               </select>
-              <input
-                value={editPatientComplaint}
-                onChange={(e) => setEditPatientComplaint(e.target.value)}
-                placeholder="Chief complaint"
-                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+              <ComplaintField
+                choice={editPatientComplaintChoice}
+                other={editPatientOtherComplaint}
+                onChoiceChange={setEditPatientComplaintChoice}
+                onOtherChange={setEditPatientOtherComplaint}
               />
               <input
                 value={editPatientStatus}
@@ -1444,11 +1643,18 @@ export function TentBoard() {
                 className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
               >
                 {pods.map((pod) => {
-                  const open = pod.beds.filter((bed) => bed.status === "open").length;
+                  const open = pod.closed
+                    ? 0
+                    : pod.beds.filter((bed) => bed.status === "open").length;
                   const current = editPatient.podId === pod.id;
                   return (
-                    <option key={pod.id} value={pod.id} disabled={!current && open === 0}>
-                      {pod.name} {current ? "(current)" : `(${open} open)`}
+                    <option
+                      key={pod.id}
+                      value={pod.id}
+                      disabled={!current && (pod.closed || open === 0)}
+                    >
+                      {pod.name}{" "}
+                      {current ? "(current)" : pod.closed ? "(closed)" : `(${open} open)`}
                     </option>
                   );
                 })}
