@@ -1,6 +1,6 @@
-export type BedStatus = "open" | "occupied" | "critical" | "cleaning";
+export type BedStatus = "open" | "occupied" | "cleaning";
 
-export type Triage = "immediate" | "delayed" | "minor";
+export type Triage = "untriaged" | "immediate" | "delayed" | "minor";
 
 export type Bed = {
   id: string;
@@ -26,19 +26,14 @@ export type Pod = {
 export type Incoming = {
   id: string;
   bib: string;
-  source: string;
-  eta: string;
+  source?: string | undefined;
+  eta?: string | undefined;
   triage: Triage;
   complaint: string;
   operationalStatus?: string | undefined;
 };
 
-export type DispositionCategory =
-  | "returned"
-  | "discharged"
-  | "ems"
-  | "hospital"
-  | "other";
+export type DispositionCategory = "returned" | "discharged" | "ems" | "hospital" | "other";
 
 export type Disposition = {
   id: string;
@@ -96,8 +91,8 @@ export const initialPods: Pod[] = [
     capabilities: ["IV Access", "Cooling", "ALS"],
     staff: ["MD Chen", "RN Miller", "RN Ortiz"],
     beds: [
-      bed("A1", "critical", "2201", "14:58", "immediate", "Heat illness", "Cooling"),
-      bed("A2", "critical", "0009", "15:05", "immediate", "Collapse", "Awaiting transport"),
+      bed("A1", "occupied", "2201", "14:58", "immediate", "Heat illness", "Cooling"),
+      bed("A2", "occupied", "0009", "15:05", "immediate", "Collapse", "Awaiting transport"),
       bed("A3", "occupied", "0412", "14:10", "delayed", "Overheated", "Recheck"),
       bed("A4", "open"),
     ],
@@ -204,7 +199,7 @@ export const initialIncoming: Incoming[] = [
     bib: "2210",
     source: "Mile 18",
     eta: "12 min",
-    triage: "minor",
+    triage: "untriaged",
     complaint: "Cramping",
     operationalStatus: "Walking",
   },
