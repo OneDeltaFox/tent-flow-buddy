@@ -72,23 +72,23 @@ const dispositionTone: Record<DispositionCategory, string> = {
 
 const triageOptions: Triage[] = ["untriaged", "immediate", "delayed", "minor"];
 const podColorOptions = ["#ef4444", "#f59e0b", "#22c55e", "#06b6d4", "#8b5cf6", "#ec4899"];
-const otherComplaintValue = "other";
+const otherComplaintValue = "Other";
 const complaintOptions = [
-  "abd pain",
-  "arm pain/inj",
-  "bleeding",
-  "chest pain",
-  "dif. breathing",
-  "dizziness",
-  "foot pain/inj",
-  "gen. weakness",
-  "hand pain/inj",
-  "head pain",
-  "heat exhaustion",
-  "knee pain/inj",
-  "laceration",
-  "leg pain/inj",
-  "nausea/vomiting",
+  "Abd Pain",
+  "Arm Pain/Inj",
+  "Bleeding",
+  "Chest Pain",
+  "Dif. Breathing",
+  "Dizziness",
+  "Foot Pain/Inj",
+  "Gen. Weakness",
+  "Hand Pain/Inj",
+  "Head Pain",
+  "Heat Exhaustion",
+  "Knee Pain/Inj",
+  "Laceration",
+  "Leg Pain/Inj",
+  "Nausea/Vomiting",
   otherComplaintValue,
 ] as const;
 
@@ -196,13 +196,14 @@ function parseCapabilities(value: string): string[] {
   );
 }
 
-function isComplaintOption(value: string): value is (typeof complaintOptions)[number] {
-  return complaintOptions.some((option) => option === value);
+function complaintOptionFor(value: string) {
+  return complaintOptions.find((option) => option.toLowerCase() === value.toLowerCase());
 }
 
 function complaintSelectionFor(complaint: string | undefined) {
-  if (complaint && isComplaintOption(complaint)) {
-    return { choice: complaint, other: "" };
+  const option = complaint ? complaintOptionFor(complaint) : undefined;
+  if (option) {
+    return { choice: option, other: "" };
   }
 
   return { choice: complaint ? otherComplaintValue : "", other: complaint ?? "" };
@@ -442,7 +443,7 @@ function ComplaintField({
         <option value="">Chief complaint</option>
         {complaintOptions.map((complaint) => (
           <option key={complaint} value={complaint}>
-            {complaint === otherComplaintValue ? "other" : complaint}
+            {complaint}
           </option>
         ))}
       </select>
