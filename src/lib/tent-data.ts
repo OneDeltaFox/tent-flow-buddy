@@ -18,6 +18,7 @@ export type Pod = {
   name: string;
   zone: string;
   note?: string | undefined;
+  color: string;
   capabilities: string[];
   staff: string[];
   beds: Bed[];
@@ -33,7 +34,7 @@ export type Incoming = {
   operationalStatus?: string | undefined;
 };
 
-export type DispositionCategory = "returned" | "discharged" | "ems" | "hospital" | "other";
+export type DispositionCategory = "discharged" | "ems" | "other";
 
 export type Disposition = {
   id: string;
@@ -63,19 +64,24 @@ export const dispositionCategories: Array<{
   id: DispositionCategory;
   label: string;
 }> = [
-  { id: "returned", label: "Returned to Event" },
   { id: "discharged", label: "Discharged" },
   { id: "ems", label: "EMS Transport" },
-  { id: "hospital", label: "Hospital / ED Transfer" },
   { id: "other", label: "Other" },
 ];
 
-export function emptyPod(id: string, name: string, zone: string, note = ""): Pod {
+export function emptyPod(
+  id: string,
+  name: string,
+  zone: string,
+  note = "",
+  color = "#38bdf8",
+): Pod {
   return {
     id,
     name,
     zone,
     note,
+    color,
     capabilities: [],
     staff: [],
     beds: Array.from({ length: BEDS_PER_POD }, (_, i) => bed(`${id}${i + 1}`, "open")),
@@ -88,6 +94,7 @@ export const initialPods: Pod[] = [
     name: "Pod A - Acute",
     zone: "Front / EMS door",
     note: "Keep one open bed when possible",
+    color: "#ef4444",
     capabilities: ["IV Access", "Cooling", "ALS"],
     staff: ["MD Chen", "RN Miller", "RN Ortiz"],
     beds: [
@@ -102,6 +109,7 @@ export const initialPods: Pod[] = [
     name: "Pod B - IV / Hydration",
     zone: "Center left",
     note: "Two chairs available for overflow",
+    color: "#f59e0b",
     capabilities: ["IV Access", "Electrolytes"],
     staff: ["RN Sarah K.", "MA Diaz"],
     beds: [
@@ -115,6 +123,7 @@ export const initialPods: Pod[] = [
     id: "C",
     name: "Pod C - Ortho / Podiatry",
     zone: "Center right",
+    color: "#22c55e",
     capabilities: ["Splinting", "Podiatry", "Wound Care"],
     staff: ["RN Patel", "Ortho Tech Wu"],
     beds: [
@@ -129,6 +138,7 @@ export const initialPods: Pod[] = [
     name: "Pod D - Cooling",
     zone: "Shade wall",
     note: "Ice bath lane kept clear",
+    color: "#06b6d4",
     capabilities: ["Ice Bath x2", "Fans", "Cooling"],
     staff: ["MA Nguyen"],
     beds: [
@@ -140,8 +150,9 @@ export const initialPods: Pod[] = [
   },
   {
     id: "E",
-    name: "Pod E - Minor / Fast Track",
+    name: "Pod E - Green / Fast Track",
     zone: "Rear left",
+    color: "#a3e635",
     capabilities: ["Blister Care", "Abrasions", "Taping"],
     staff: ["RN Boone", "Volunteer x3"],
     beds: [
@@ -155,6 +166,7 @@ export const initialPods: Pod[] = [
     id: "F",
     name: "Pod F - Observation",
     zone: "Rear right / exit",
+    color: "#8b5cf6",
     capabilities: ["Recliners", "Oral Fluids"],
     staff: ["RN Alvarez"],
     beds: [
@@ -207,15 +219,6 @@ export const initialIncoming: Incoming[] = [
 
 export const initialDispositions: Disposition[] = [
   {
-    id: "d1",
-    bib: "4401",
-    category: "returned",
-    time: "15:03",
-    from: "Pod E",
-    triage: "minor",
-    complaint: "Blister care",
-  },
-  {
     id: "d2",
     bib: "0129",
     category: "ems",
@@ -241,23 +244,5 @@ export const initialDispositions: Disposition[] = [
     from: "Pod F",
     triage: "minor",
     complaint: "Fatigue",
-  },
-  {
-    id: "d5",
-    bib: "1928",
-    category: "hospital",
-    time: "14:31",
-    from: "Pod A",
-    triage: "immediate",
-    complaint: "Heat illness",
-  },
-  {
-    id: "d6",
-    bib: "0761",
-    category: "returned",
-    time: "14:22",
-    from: "Pod C",
-    triage: "minor",
-    complaint: "Taping",
   },
 ];
