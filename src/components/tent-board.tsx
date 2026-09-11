@@ -199,6 +199,18 @@ function parseCapabilities(value: string): string[] {
   );
 }
 
+function addCapabilityToList(capabilities: string[], capability: string): string[] {
+  const clean = capability.trim();
+  if (!clean) return capabilities;
+
+  const exists = capabilities.some((item) => item.toLowerCase() === clean.toLowerCase());
+  return exists ? capabilities : [...capabilities, clean];
+}
+
+function removeCapabilityFromList(capabilities: string[], capability: string): string[] {
+  return capabilities.filter((item) => item !== capability);
+}
+
 function complaintOptionFor(value: string) {
   return complaintOptions.find((option) => option.toLowerCase() === value.toLowerCase());
 }
@@ -510,7 +522,8 @@ function PodCard({
   onNoteChange,
   onColorChange,
   onClosedChange,
-  onCapabilitiesChange,
+  onCapabilityAdd,
+  onCapabilityRemove,
   onPatientDragStart,
   onPatientDragEnd,
   onPatientDrop,
@@ -523,12 +536,23 @@ function PodCard({
   onNoteChange: (note: string) => void;
   onColorChange: (color: string) => void;
   onClosedChange: (closed: boolean) => void;
-  onCapabilitiesChange: (capabilities: string) => void;
+  onCapabilityAdd: (capability: string) => void;
+  onCapabilityRemove: (capability: string) => void;
   onPatientDragStart: (bedId: string, e: React.DragEvent) => void;
   onPatientDragEnd: () => void;
   onPatientDrop: (bedId: string, e: React.DragEvent) => void;
 }) {
   const { open, immediate, total } = podCounts(pod);
+  const [capabilityDraft, setCapabilityDraft] = useState("");
+
+  const addCapability = () => {
+    const capability = capabilityDraft.trim();
+    if (!capability) return;
+
+    onCapabilityAdd(capability);
+    setCapabilityDraft("");
+  };
+
   return (
     <div className="relative">
       <button
@@ -610,7 +634,7 @@ function PodCard({
         </div>
       </button>
       {setup && (
-        <div className="mt-2 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+        <div className="mt-2 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
           <input
             type="color"
             value={pod.color}
@@ -622,12 +646,6 @@ function PodCard({
             value={pod.note ?? ""}
             onChange={(e) => onNoteChange(e.target.value)}
             placeholder="Short pod note"
-            className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-          />
-          <input
-            value={pod.capabilities.join(", ")}
-            onChange={(e) => onCapabilitiesChange(e.target.value)}
-            placeholder="Capabilities"
             className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
           />
           <button
@@ -650,6 +668,52 @@ function PodCard({
           >
             x
           </button>
+          <div className="flex min-w-0 flex-col gap-2 rounded-sm border border-border bg-background/60 p-2 sm:col-span-4">
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              {pod.capabilities.length === 0 && (
+                <span className="text-[10px] font-semibold uppercase tracking-tight text-muted-foreground">
+                  No capabilities
+                </span>
+              )}
+              {pod.capabilities.map((capability) => (
+                <span
+                  key={capability}
+                  className="inline-flex max-w-full items-center gap-1 rounded-sm border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-tight text-muted-foreground"
+                >
+                  <span className="truncate">{capability}</span>
+                  <button
+                    type="button"
+                    onClick={() => onCapabilityRemove(capability)}
+                    title={`Remove ${capability}`}
+                    className="font-mono text-xs font-bold leading-none text-status-critical hover:opacity-70"
+                  >
+                    x
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <input
+                value={capabilityDraft}
+                onChange={(e) => setCapabilityDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCapability();
+                  }
+                }}
+                placeholder="Add capability"
+                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+              />
+              <button
+                type="button"
+                onClick={addCapability}
+                className="rounded-sm border border-signal bg-signal px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+              >
+                Add
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1071,10 +1135,22 @@ export function TentBoard() {
     setLayoutMessage(closed ? "Pod closed to new assignments." : "Pod reopened.");
   };
 
-  const updatePodCapabilities = (id: string, capabilities: string) => {
+  const addPodCapability = (id: string, capability: string) => {
     setPods((prev) =>
       prev.map((pod) =>
-        pod.id === id ? { ...pod, capabilities: parseCapabilities(capabilities) } : pod,
+        pod.id === id
+          ? { ...pod, capabilities: addCapabilityToList(pod.capabilities, capability) }
+          : pod,
+      ),
+    );
+  };
+
+  const removePodCapability = (id: string, capability: string) => {
+    setPods((prev) =>
+      prev.map((pod) =>
+        pod.id === id
+          ? { ...pod, capabilities: removeCapabilityFromList(pod.capabilities, capability) }
+          : pod,
       ),
     );
   };
@@ -1590,7 +1666,8 @@ export function TentBoard() {
                 onNoteChange={(note) => updatePodNote(pod.id, note)}
                 onColorChange={(color) => updatePodColor(pod.id, color)}
                 onClosedChange={(closed) => updatePodClosed(pod.id, closed)}
-                onCapabilitiesChange={(capabilities) => updatePodCapabilities(pod.id, capabilities)}
+                onCapabilityAdd={(capability) => addPodCapability(pod.id, capability)}
+                onCapabilityRemove={(capability) => removePodCapability(pod.id, capability)}
                 onPatientDragStart={(bedId, e) =>
                   startDrag({ kind: "bed", podId: pod.id, bedId }, e)
                 }
