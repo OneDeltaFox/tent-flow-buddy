@@ -112,7 +112,8 @@ type PatientSummary = {
   operationalStatus?: string | undefined;
 };
 
-type EditPatientRef = { podId: string; bedId: string };
+type EditPatientRef =
+  { kind: "bed"; podId: string; bedId: string } | { kind: "incoming"; incomingId: string };
 
 function formatBoardTime() {
   return new Intl.DateTimeFormat("en-US", {
@@ -381,12 +382,22 @@ function PatientCard({
 }) {
   return (
     <div
-      draggable={draggable}
-      onDragStart={draggable ? onDragStart : undefined}
-      onDragEnd={draggable ? onDragEnd : undefined}
+      role={onEdit ? "button" : undefined}
+      tabIndex={onEdit ? 0 : undefined}
+      onClick={onEdit}
+      onKeyDown={
+        onEdit
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onEdit();
+              }
+            }
+          : undefined
+      }
       title={title}
       className={`flex items-center gap-3 rounded-md border bg-secondary/40 px-3 py-2.5 ${
-        draggable ? "cursor-grab active:cursor-grabbing" : ""
+        onEdit ? "cursor-pointer" : ""
       } ${
         patient.triage === "immediate"
           ? "border-status-critical/60"
@@ -419,6 +430,25 @@ function PatientCard({
       <span className="shrink-0 text-right font-mono text-[10px] font-bold uppercase text-muted-foreground">
         {locationLabel}
       </span>
+      {draggable && (
+        <button
+          type="button"
+          draggable
+          onClick={(e) => e.stopPropagation()}
+          onDragStart={(e) => {
+            e.stopPropagation();
+            onDragStart(e);
+          }}
+          onDragEnd={(e) => {
+            e.stopPropagation();
+            onDragEnd();
+          }}
+          title="Drag patient"
+          className="shrink-0 rounded-sm border border-border bg-background px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground cursor-grab hover:border-signal hover:text-signal active:cursor-grabbing"
+        >
+          Move
+        </button>
+      )}
       {onEdit && (
         <button
           type="button"
@@ -478,11 +508,13 @@ function ComplaintField({
 function IncomingCard({
   patient,
   draggable,
+  onEdit,
   onDragStart,
   onDragEnd,
 }: {
   patient: Incoming;
   draggable: boolean;
+  onEdit?: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
@@ -493,10 +525,11 @@ function IncomingCard({
         locationLabel={patient.eta ? `ETA ${patient.eta}` : "Incoming"}
         title={
           draggable
-            ? "Drag to an open bed or disposition bucket"
+            ? "Tap to edit. Use Move to drag to an open bed or disposition bucket"
             : "Patient movement paused in edit layout"
         }
         draggable={draggable}
+        onEdit={draggable ? onEdit : undefined}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       />
@@ -819,7 +852,7 @@ function PodDetail({
             key={bed.id}
             patient={patientFromBed(bed)}
             locationLabel={`${bed.label} - in ${bed.since ?? "--:--"}`}
-            title="Drag to another open bed or disposition bucket"
+            title="Tap to edit. Use Move to drag to another open bed or disposition bucket"
             onEdit={() => onEditPatient(pod.id, bed)}
             onDragStart={(e) => onPatientDragStart(bed.id, e)}
             onDragEnd={onPatientDragEnd}
@@ -1168,13 +1201,25 @@ export function TentBoard() {
   const startPatientEdit = (podId: string, bed: Bed) => {
     if (!bed.bib) return;
     const complaint = complaintSelectionFor(bed.complaint);
-    setEditPatient({ podId, bedId: bed.id });
+    setEditPatient({ kind: "bed", podId, bedId: bed.id });
     setEditPatientBib(bed.bib);
     setEditPatientTriage(bed.triage ?? "untriaged");
     setEditPatientComplaintChoice(complaint.choice);
     setEditPatientOtherComplaint(complaint.other);
     setEditPatientStatus(bed.operationalStatus ?? "");
     setEditPatientPod(podId);
+    setEditPatientMessage("");
+  };
+
+  const startIncomingEdit = (patient: Incoming) => {
+    const complaint = complaintSelectionFor(patient.complaint);
+    setEditPatient({ kind: "incoming", incomingId: patient.id });
+    setEditPatientBib(patient.bib);
+    setEditPatientTriage(patient.triage);
+    setEditPatientComplaintChoice(complaint.choice);
+    setEditPatientOtherComplaint(complaint.other);
+    setEditPatientStatus(patient.operationalStatus ?? "");
+    setEditPatientPod("");
     setEditPatientMessage("");
   };
 
@@ -1187,17 +1232,81 @@ export function TentBoard() {
     e.preventDefault();
     if (!editPatient) return;
 
+    const updated = {
+      bib: editPatientBib.trim(),
+      triage: editPatientTriage,
+      complaint:
+        complaintFromSelection(editPatientComplaintChoice, editPatientOtherComplaint) || undefined,
+      operationalStatus: editPatientStatus.trim() || undefined,
+    };
+
+    if (editPatient.kind === "incoming") {
+      const currentPatient = incomingQueue.find((patient) => patient.id === editPatient.incomingId);
+      if (!currentPatient) return;
+
+      const incomingUpdate = {
+        bib: updated.bib || currentPatient.bib,
+        triage: updated.triage,
+        complaint: updated.complaint ?? currentPatient.complaint,
+        operationalStatus: updated.operationalStatus,
+      };
+
+      if (!editPatientPod) {
+        setIncomingQueue((prev) =>
+          prev.map((patient) =>
+            patient.id === editPatient.incomingId ? { ...patient, ...incomingUpdate } : patient,
+          ),
+        );
+        cancelPatientEdit();
+        return;
+      }
+
+      const targetPod = pods.find((pod) => pod.id === editPatientPod);
+      if (!targetPod) return;
+
+      if (targetPod.closed) {
+        setEditPatientMessage(`${targetPod.name} is closed to new assignments.`);
+        return;
+      }
+
+      const targetBed = targetPod.beds.find((bed) => bed.status === "open");
+      if (!targetBed) {
+        setEditPatientMessage(`${targetPod.name} has no open beds.`);
+        return;
+      }
+
+      setPods((prev) =>
+        prev.map((pod) => ({
+          ...pod,
+          beds: pod.beds.map((bed) =>
+            pod.id === targetPod.id && bed.id === targetBed.id
+              ? {
+                  ...bed,
+                  status: "occupied",
+                  bib: incomingUpdate.bib,
+                  since: formatBoardTime(),
+                  triage: incomingUpdate.triage,
+                  complaint: incomingUpdate.complaint,
+                  operationalStatus: incomingUpdate.operationalStatus,
+                }
+              : bed,
+          ),
+        })),
+      );
+      setIncomingQueue((prev) => prev.filter((patient) => patient.id !== editPatient.incomingId));
+      setSelectedPod(targetPod.id);
+      cancelPatientEdit();
+      return;
+    }
+
     const currentPod = pods.find((pod) => pod.id === editPatient.podId);
     const currentBed = currentPod?.beds.find((bed) => bed.id === editPatient.bedId);
     const targetPod = pods.find((pod) => pod.id === editPatientPod);
     if (!currentPod || !currentBed?.bib || !targetPod) return;
 
-    const updated = {
-      bib: editPatientBib.trim() || currentBed.bib,
-      triage: editPatientTriage,
-      complaint:
-        complaintFromSelection(editPatientComplaintChoice, editPatientOtherComplaint) || undefined,
-      operationalStatus: editPatientStatus.trim() || undefined,
+    const bedUpdate = {
+      ...updated,
+      bib: updated.bib || currentBed.bib,
     };
 
     if (editPatientPod !== editPatient.podId) {
@@ -1224,7 +1333,7 @@ export function TentBoard() {
                 ...bed,
                 status: "occupied",
                 since: currentBed.since ?? formatBoardTime(),
-                ...updated,
+                ...bedUpdate,
               };
             }
             return bed;
@@ -1241,7 +1350,7 @@ export function TentBoard() {
         ...pod,
         beds: pod.beds.map((bed) =>
           pod.id === editPatient.podId && bed.id === editPatient.bedId
-            ? { ...bed, ...updated }
+            ? { ...bed, ...bedUpdate }
             : bed,
         ),
       })),
@@ -1616,6 +1725,7 @@ export function TentBoard() {
               key={patient.id}
               patient={patient}
               draggable={!setup}
+              onEdit={() => startIncomingEdit(patient)}
               onDragStart={(e) => startDrag({ kind: "incoming", incomingId: patient.id }, e)}
               onDragEnd={() => setDragRef(null)}
             />
@@ -1754,11 +1864,12 @@ export function TentBoard() {
                 aria-label="Move to pod"
                 className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
               >
+                {editPatient.kind === "incoming" && <option value="">Incoming queue</option>}
                 {pods.map((pod) => {
                   const open = pod.closed
                     ? 0
                     : pod.beds.filter((bed) => bed.status === "open").length;
-                  const current = editPatient.podId === pod.id;
+                  const current = editPatient.kind === "bed" && editPatient.podId === pod.id;
                   return (
                     <option
                       key={pod.id}
