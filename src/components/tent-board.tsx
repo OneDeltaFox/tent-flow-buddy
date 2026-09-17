@@ -1544,11 +1544,11 @@ export function TentBoard() {
                     </select>
                   </label>
                   <label>
-                    Operational status
+                    Notes
                     <input
                       value={newPatientStatus}
                       onChange={(e) => setNewPatientStatus(e.target.value)}
-                      placeholder="Operational status"
+                      placeholder="Notes"
                       className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
                     />
                   </label>
