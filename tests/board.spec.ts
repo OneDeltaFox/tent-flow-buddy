@@ -136,7 +136,7 @@ test("closed and occupied beds reject drops", async ({ page, isMobile }) => {
   const closed = page
     .locator("article")
     .filter({ has: page.getByRole("heading", { name: "Pod C", exact: true }) });
-  await drag(page, source, closed.getByText("C1", { exact: true }), isMobile);
+  await drag(page, source, closed.getByText("3-1", { exact: true }), isMobile);
   expect((await savedPods(page))[0].beds[0].bib).toBe("A100");
   await page.waitForTimeout(550);
   await drag(
@@ -217,7 +217,7 @@ test("disposition drop preserves cleaning and ready workflow", async ({ page, is
     ),
   ).toBe("A100");
   await page.getByRole("button", { name: /^Pod A 0\/4/ }).click();
-  await page.getByRole("button", { name: "A1 ready", exact: true }).click();
+  await page.getByRole("button", { name: "1-1 ready", exact: true }).click();
   expect((await savedPods(page))[0].beds[0].status).toBe("open");
 });
 

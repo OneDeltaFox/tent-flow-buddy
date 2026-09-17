@@ -19,6 +19,7 @@ import {
   initialDispositions,
   initialIncoming,
   initialPods,
+  numberPodBeds,
 } from "@/lib/tent-data";
 
 const statusTile: Record<BedStatus, string> = {
@@ -140,7 +141,7 @@ function normalizeTriage(triage: unknown): Triage {
 }
 
 function normalizeStoredPods(pods: Pod[]): Pod[] {
-  return pods.map((pod, index) => ({
+  return numberPodBeds(pods).map((pod, index) => ({
     ...pod,
     color:
       typeof pod.color === "string" ? pod.color : podColorOptions[index % podColorOptions.length]!,
@@ -903,8 +904,16 @@ export function TentBoard() {
 
     for (let i = 0; i < count; i += 1) {
       const id = nextPodId(nextPods);
-      const name = baseName ? (count > 1 ? `${baseName} ${id}` : baseName) : `Pod ${id}`;
-      const pod = emptyPod(id, name, newZone.trim() || "Unassigned zone", newNote.trim(), newColor);
+      const number = Math.max(0, ...nextPods.map((pod) => pod.number ?? 0)) + 1;
+      const name = baseName ? (count > 1 ? `${baseName} ${number}` : baseName) : `Pod ${number}`;
+      const pod = emptyPod(
+        id,
+        name,
+        newZone.trim() || "Unassigned zone",
+        newNote.trim(),
+        newColor,
+        number,
+      );
       pod.capabilities = capabilities;
       nextPods.push(pod);
       addedPods.push(pod);

@@ -15,6 +15,7 @@ export type Bed = {
 
 export type Pod = {
   id: string;
+  number?: number;
   name: string;
   zone: string;
   note?: string | undefined;
@@ -61,6 +62,31 @@ function bed(
 
 export const BEDS_PER_POD = 4;
 
+export function numberPodBeds(pods: Pod[]): Pod[] {
+  const used = new Set<number>();
+  const numbers = pods.map((pod) => {
+    const namedNumber = Number(/^Pod\s+(\d+)\b/i.exec(pod.name)?.[1]);
+    const number = pod.number ?? namedNumber;
+    if (!Number.isSafeInteger(number) || number < 1 || used.has(number)) return undefined;
+    used.add(number);
+    return number;
+  });
+  let next = 1;
+  return pods.map((pod, index) => {
+    let number = numbers[index];
+    if (number === undefined) {
+      while (used.has(next)) next += 1;
+      number = next;
+      used.add(number);
+    }
+    return {
+      ...pod,
+      number,
+      beds: pod.beds.map((bed, bedIndex) => ({ ...bed, label: `${number}-${bedIndex + 1}` })),
+    };
+  });
+}
+
 export const dispositionCategories: Array<{
   id: DispositionCategory;
   label: string;
@@ -76,20 +102,25 @@ export function emptyPod(
   zone: string,
   note = "",
   color = "#38bdf8",
+  number = 1,
 ): Pod {
   return {
     id,
+    number,
     name,
     zone,
     note,
     color,
     capabilities: [],
     staff: [],
-    beds: Array.from({ length: BEDS_PER_POD }, (_, i) => bed(`${id}${i + 1}`, "open")),
+    beds: Array.from({ length: BEDS_PER_POD }, (_, i) => ({
+      ...bed(`${id}${i + 1}`, "open"),
+      label: `${number}-${i + 1}`,
+    })),
   };
 }
 
-export const initialPods: Pod[] = [
+export const initialPods: Pod[] = numberPodBeds([
   {
     id: "A",
     name: "Pod A - Acute",
@@ -177,7 +208,7 @@ export const initialPods: Pod[] = [
       bed("F4", "open"),
     ],
   },
-];
+]);
 
 export const initialIncoming: Incoming[] = [
   {
