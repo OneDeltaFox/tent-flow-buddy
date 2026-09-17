@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Pencil, Settings, Trash2, X } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { PatientMovement, PatientSurface, PatientDropTarget } from "@/components/patient-movement";
+import type { PatientRef } from "@/components/patient-movement";
 import type {
   Bed,
   BedStatus,
@@ -34,27 +38,6 @@ const triageLabel: Record<Triage, string> = {
   immediate: "Red",
   delayed: "Yellow",
   minor: "Green",
-};
-
-const triageBadge: Record<Triage, string> = {
-  untriaged: "border-muted-foreground/50 bg-muted/40 text-muted-foreground",
-  immediate: "border-status-critical bg-status-critical/15 text-status-critical",
-  delayed: "border-status-occupied bg-status-occupied/15 text-status-occupied",
-  minor: "border-status-open bg-status-open/15 text-status-open",
-};
-
-const triageDot: Record<Triage, string> = {
-  untriaged: "bg-muted-foreground",
-  immediate: "bg-status-critical",
-  delayed: "bg-status-occupied",
-  minor: "bg-status-open",
-};
-
-const incomingTone: Record<Triage, string> = {
-  untriaged: "border-l-muted-foreground",
-  immediate: "border-l-status-critical",
-  delayed: "border-l-status-occupied",
-  minor: "border-l-status-open",
 };
 
 const triageBedTile: Record<Triage, string> = {
@@ -95,15 +78,11 @@ const complaintOptions = [
   otherComplaintValue,
 ] as const;
 
-const DRAG_MIME = "application/x-tent-patient";
 const PODS_STORAGE_KEY = "tent-board-pods-v3";
 const INCOMING_STORAGE_KEY = "tent-board-incoming-v1";
 const DISPOSITION_STORAGE_KEY = "tent-board-dispositions-v1";
 const EVENT_NAME_STORAGE_KEY = "tent-board-event-name-v1";
 const DEFAULT_EVENT_NAME = "Finish Line Medical";
-
-type DragRef =
-  { kind: "bed"; podId: string; bedId: string } | { kind: "incoming"; incomingId: string };
 
 type PatientSummary = {
   bib: string;
@@ -164,7 +143,7 @@ function normalizeStoredPods(pods: Pod[]): Pod[] {
   return pods.map((pod, index) => ({
     ...pod,
     color:
-      typeof pod.color === "string" ? pod.color : podColorOptions[index % podColorOptions.length],
+      typeof pod.color === "string" ? pod.color : podColorOptions[index % podColorOptions.length]!,
     closed: pod.closed === true,
     capabilities: Array.isArray(pod.capabilities) ? pod.capabilities : [],
     beds: pod.beds.map((bed) => ({
@@ -230,26 +209,6 @@ function complaintFromSelection(choice: string, other: string) {
   return choice.trim();
 }
 
-function parseDragRef(raw: string): DragRef | null {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (parsed.kind === "incoming" && typeof parsed.incomingId === "string") {
-      return { kind: "incoming", incomingId: parsed.incomingId };
-    }
-    if (
-      parsed.kind === "bed" &&
-      typeof parsed.podId === "string" &&
-      typeof parsed.bedId === "string"
-    ) {
-      return { kind: "bed", podId: parsed.podId, bedId: parsed.bedId };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
 function patientFromBed(bed: Bed): PatientSummary {
   return {
     bib: bed.bib ?? "",
@@ -306,162 +265,71 @@ function bedTileTone(bed: Bed) {
 
 function BedTile({
   bed,
-  draggable,
-  dropTarget,
+  podId,
+  disabled = false,
   className = "",
-  onDragStart,
-  onDrop,
-  onDragEnd,
+  onEdit,
 }: {
   bed: Bed;
-  draggable: boolean;
-  dropTarget: boolean;
+  podId: string;
+  disabled?: boolean;
   className?: string;
-  onDragStart?: (e: React.DragEvent) => void;
-  onDrop?: (e: React.DragEvent) => void;
-  onDragEnd?: () => void;
+  onEdit?: (() => void) | undefined;
 }) {
-  const [over, setOver] = useState(false);
   return (
-    <div
-      title={`${bed.label} - ${statusLabel[bed.status]}${
-        bed.triage ? ` - ${triageLabel[bed.triage]}` : ""
-      }${bed.bib ? ` - #${bed.bib}` : ""}`}
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragOver={
-        dropTarget
-          ? (e) => {
-              e.preventDefault();
-              setOver(true);
-            }
-          : undefined
+    <PatientDropTarget
+      target={
+        !disabled && bed.status === "open" ? { kind: "bed", podId, bedId: bed.id } : undefined
       }
-      onDragLeave={dropTarget ? () => setOver(false) : undefined}
-      onDrop={
-        dropTarget
-          ? (e) => {
-              e.preventDefault();
-              setOver(false);
-              onDrop?.(e);
-            }
-          : undefined
-      }
-      className={`flex aspect-square min-w-0 flex-col items-center justify-center rounded-sm border font-mono leading-none ${bedTileTone(bed)} ${
-        draggable ? "cursor-grab active:cursor-grabbing" : ""
-      } ${over ? "ring-2 ring-signal bg-signal/20" : ""} ${className}`}
+      className="min-w-0 rounded-sm"
     >
-      {bed.bib ? (
-        <span className="text-[13px] font-extrabold tracking-tight">{bed.bib}</span>
-      ) : (
-        <span className="text-[9px] font-bold uppercase tracking-tight">
-          {bed.status === "cleaning" ? "CLR" : bed.label}
+      <PatientSurface
+        source={!disabled && bed.bib ? { kind: "bed", podId, bedId: bed.id } : undefined}
+        bib={bed.bib}
+        onEdit={onEdit}
+        className={`flex min-h-11 min-w-0 flex-col items-center justify-center rounded-sm border px-1 py-2 font-mono ${bedTileTone(bed)} ${className}`}
+      >
+        <span
+          title={bed.bib ? `#${bed.bib}` : bed.label}
+          className="block w-full truncate text-center text-xs font-bold"
+        >
+          {bed.bib ?? (bed.status === "cleaning" ? "CLR" : bed.label)}
         </span>
-      )}
-    </div>
+      </PatientSurface>
+    </PatientDropTarget>
   );
 }
 
 function PatientCard({
   patient,
   locationLabel,
-  title,
-  draggable = true,
+  source,
   onEdit,
-  onDragStart,
-  onDragEnd,
 }: {
   patient: PatientSummary;
   locationLabel: string;
-  title: string;
-  draggable?: boolean;
-  onEdit?: () => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onDragEnd: () => void;
+  source?: PatientRef | undefined;
+  onEdit?: (() => void) | undefined;
 }) {
   return (
-    <div
-      role={onEdit ? "button" : undefined}
-      tabIndex={onEdit ? 0 : undefined}
-      onClick={onEdit}
-      onKeyDown={
-        onEdit
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onEdit();
-              }
-            }
-          : undefined
-      }
-      title={title}
-      className={`flex items-center gap-3 rounded-md border bg-secondary/40 px-3 py-2.5 ${
-        onEdit ? "cursor-pointer" : ""
-      } ${
-        patient.triage === "immediate"
-          ? "border-status-critical/60"
-          : "border-border hover:border-muted-foreground"
-      }`}
+    <PatientSurface
+      source={source}
+      bib={patient.bib}
+      onEdit={onEdit}
+      className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border px-3 py-2.5 ${triageBedTile[patient.triage ?? "untriaged"]}`}
     >
-      <span className="shrink-0 font-mono text-2xl font-extrabold tracking-tight">
-        #{patient.bib}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-foreground">
-          {patient.complaint ?? "Needs placement"}
+      <span className="max-w-full break-all font-mono text-lg font-extrabold">#{patient.bib}</span>
+      <div className="min-w-0 flex-1 basis-24">
+        <p className="break-words text-sm font-semibold">
+          {patient.complaint || "Needs placement"}
         </p>
-        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-          {patient.triage && (
-            <span
-              className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest ${triageBadge[patient.triage]}`}
-            >
-              <span className={`size-1.5 rounded-full ${triageDot[patient.triage]}`} />
-              {triageLabel[patient.triage]}
-            </span>
-          )}
-          {patient.operationalStatus && (
-            <span className="truncate rounded-sm bg-background/60 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tight text-muted-foreground">
-              {patient.operationalStatus}
-            </span>
-          )}
-        </div>
+        <p className="text-xs">{triageLabel[patient.triage ?? "untriaged"]}</p>
+        {patient.operationalStatus && (
+          <p className="break-words text-xs">{patient.operationalStatus}</p>
+        )}
       </div>
-      <span className="shrink-0 text-right font-mono text-[10px] font-bold uppercase text-muted-foreground">
-        {locationLabel}
-      </span>
-      {draggable && (
-        <button
-          type="button"
-          draggable
-          onClick={(e) => e.stopPropagation()}
-          onDragStart={(e) => {
-            e.stopPropagation();
-            onDragStart(e);
-          }}
-          onDragEnd={(e) => {
-            e.stopPropagation();
-            onDragEnd();
-          }}
-          title="Drag patient"
-          className="shrink-0 rounded-sm border border-border bg-background px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground cursor-grab hover:border-signal hover:text-signal active:cursor-grabbing"
-        >
-          Move
-        </button>
-      )}
-      {onEdit && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-          className="shrink-0 rounded-sm border border-signal bg-signal px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
-        >
-          Edit
-        </button>
-      )}
-    </div>
+      <span className="font-mono text-[10px]">{locationLabel}</span>
+    </PatientSurface>
   );
 }
 
@@ -478,28 +346,34 @@ function ComplaintField({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <select
-        value={choice}
-        onChange={(e) => onChoiceChange(e.target.value)}
-        aria-label="Chief complaint"
-        className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-signal"
-        required
-      >
-        <option value="">Chief complaint</option>
-        {complaintOptions.map((complaint) => (
-          <option key={complaint} value={complaint}>
-            {complaint}
-          </option>
-        ))}
-      </select>
-      {choice === otherComplaintValue && (
-        <input
-          value={other}
-          onChange={(e) => onOtherChange(e.target.value)}
-          placeholder="Enter complaint"
-          className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+      <label>
+        Chief complaint
+        <select
+          value={choice}
+          onChange={(e) => onChoiceChange(e.target.value)}
+          aria-label="Chief complaint"
+          className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-signal"
           required
-        />
+        >
+          <option value="">Chief complaint</option>
+          {complaintOptions.map((complaint) => (
+            <option key={complaint} value={complaint}>
+              {complaint}
+            </option>
+          ))}
+        </select>
+      </label>
+      {choice === otherComplaintValue && (
+        <label>
+          Other complaint
+          <input
+            value={other}
+            onChange={(e) => onOtherChange(e.target.value)}
+            placeholder="Enter complaint"
+            className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+            required
+          />
+        </label>
       )}
     </div>
   );
@@ -507,43 +381,33 @@ function ComplaintField({
 
 function IncomingCard({
   patient,
-  draggable,
+  disabled,
   onEdit,
-  onDragStart,
-  onDragEnd,
 }: {
   patient: Incoming;
-  draggable: boolean;
-  onEdit?: () => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onDragEnd: () => void;
+  disabled: boolean;
+  onEdit: () => void;
 }) {
   return (
-    <div className={`rounded-r-sm border-l-2 bg-secondary/40 p-2 ${incomingTone[patient.triage]}`}>
+    <div className="min-w-0">
       <PatientCard
         patient={patientFromIncoming(patient)}
         locationLabel={patient.eta ? `ETA ${patient.eta}` : "Incoming"}
-        title={
-          draggable
-            ? "Tap to edit. Use Move to drag to an open bed or disposition bucket"
-            : "Patient movement paused in edit layout"
-        }
-        draggable={draggable}
-        onEdit={draggable ? onEdit : undefined}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+        source={disabled ? undefined : { kind: "incoming", incomingId: patient.id }}
+        onEdit={disabled ? undefined : onEdit}
       />
       {patient.source && (
-        <p className="mt-1 truncate px-1 text-[11px] text-muted-foreground">{patient.source}</p>
+        <p className="mt-1 truncate text-xs text-muted-foreground">{patient.source}</p>
       )}
     </div>
   );
 }
 
 function podCounts(pod: Pod) {
-  const open = pod.closed ? 0 : pod.beds.filter((b) => b.status === "open").length;
-  const immediate = pod.beds.filter((b) => b.bib && b.triage === "immediate").length;
-  return { open, immediate, total: pod.beds.length };
+  return {
+    open: pod.closed ? 0 : pod.beds.filter((bed) => bed.status === "open").length,
+    total: pod.beds.length,
+  };
 }
 
 function PodCard({
@@ -551,205 +415,220 @@ function PodCard({
   selected,
   setup,
   onSelect,
-  onRemove,
-  onNoteChange,
-  onColorChange,
-  onClosedChange,
-  onCapabilityAdd,
-  onCapabilityRemove,
-  onPatientDragStart,
-  onPatientDragEnd,
-  onPatientDrop,
+  onEdit,
+  onEditPatient,
 }: {
   pod: Pod;
   selected: boolean;
   setup: boolean;
   onSelect: () => void;
-  onRemove: () => void;
-  onNoteChange: (note: string) => void;
-  onColorChange: (color: string) => void;
-  onClosedChange: (closed: boolean) => void;
-  onCapabilityAdd: (capability: string) => void;
-  onCapabilityRemove: (capability: string) => void;
-  onPatientDragStart: (bedId: string, e: React.DragEvent) => void;
-  onPatientDragEnd: () => void;
-  onPatientDrop: (bedId: string, e: React.DragEvent) => void;
+  onEdit: () => void;
+  onEditPatient: (podId: string, bed: Bed) => void;
 }) {
-  const { open, immediate, total } = podCounts(pod);
-  const [capabilityDraft, setCapabilityDraft] = useState("");
-
-  const addCapability = () => {
-    const capability = capabilityDraft.trim();
-    if (!capability) return;
-
-    onCapabilityAdd(capability);
-    setCapabilityDraft("");
-  };
-
+  const { open, total } = podCounts(pod);
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={onSelect}
-        style={{ borderLeftColor: pod.color, borderLeftWidth: 5 }}
-        className={`flex w-full min-w-0 flex-col gap-3 rounded-lg border bg-card p-3 text-left transition-colors ${
-          selected
-            ? "border-signal ring-1 ring-signal"
-            : "border-border hover:border-muted-foreground"
-        }`}
-      >
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold tracking-tight">{pod.name}</h3>
-            <p className="truncate text-[10px] font-medium text-muted-foreground">{pod.zone}</p>
-            {pod.note && (
-              <p className="mt-1 truncate text-[10px] font-semibold text-signal">{pod.note}</p>
-            )}
-            {pod.closed && (
-              <span className="mt-1 inline-flex rounded-sm border border-status-critical bg-status-critical/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-status-critical">
-                Closed
-              </span>
-            )}
-            {pod.capabilities.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1">
-                {pod.capabilities.map((capability) => (
-                  <span
-                    key={capability}
-                    className="rounded-sm border border-border bg-secondary px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-tight text-muted-foreground"
-                  >
-                    {capability}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="shrink-0 text-right font-mono">
-            <div className="text-lg font-extrabold leading-none text-status-open">
-              {String(open).padStart(2, "0")}
-            </div>
-            <div className="text-[9px] font-bold uppercase text-muted-foreground">
-              open / {total}
-            </div>
-          </div>
-        </div>
+    <article
+      style={{ borderLeftColor: pod.color, borderLeftWidth: 4 }}
+      className={`min-w-0 rounded-md border bg-card p-2 sm:p-3 ${selected ? "border-signal" : "border-border"}`}
+    >
+      <div className="mb-2 flex min-w-0 items-start gap-1">
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-expanded={selected}
+          className="min-h-11 min-w-0 flex-1 text-left"
+        >
+          <h3 className="break-words text-xs font-semibold sm:text-sm">{pod.name}</h3>
+          <p className="text-[10px] text-muted-foreground">
+            {pod.closed
+              ? "Closed"
+              : `${total - pod.beds.filter((bed) => !bed.bib).length}/${total} occupied · ${open} open`}
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Edit ${pod.name}`}
+          title={`Edit ${pod.name}`}
+          className="flex size-11 shrink-0 items-center justify-center rounded-sm bg-signal text-background"
+        >
+          <Pencil size={16} />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {pod.beds.map((bed) => (
+          <BedTile
+            key={bed.id}
+            bed={bed}
+            podId={pod.id}
+            disabled={setup || (!!pod.closed && !bed.bib)}
+            className={pod.closed && !bed.bib ? "opacity-35" : ""}
+            onEdit={!setup && bed.bib ? () => onEditPatient(pod.id, bed) : undefined}
+          />
+        ))}
+      </div>
+      <div className="mt-2 hidden min-w-0 text-xs text-muted-foreground sm:block">
+        {pod.zone && <p className="truncate">{pod.zone}</p>}
+        {pod.note && <p className="truncate text-signal">{pod.note}</p>}
+        {pod.capabilities.length > 0 && <p className="truncate">{pod.capabilities.join(", ")}</p>}
+      </div>
+    </article>
+  );
+}
 
-        <div className="grid grid-cols-4 gap-1.5">
-          {pod.beds.map((bed) => (
-            <BedTile
-              key={bed.id}
-              bed={bed}
-              draggable={!setup && !!bed.bib}
-              dropTarget={!setup && !pod.closed && bed.status === "open"}
-              className={pod.closed && !bed.bib ? "opacity-35" : ""}
-              onDragStart={(e) => {
-                e.stopPropagation();
-                onPatientDragStart(bed.id, e);
-              }}
-              onDragEnd={onPatientDragEnd}
-              onDrop={(e) => onPatientDrop(bed.id, e)}
+function PodEditor({
+  pod,
+  onSave,
+  onClose,
+  onRemove,
+}: {
+  pod: Pod;
+  onSave: (pod: Pod) => void;
+  onClose: () => void;
+  onRemove: () => boolean;
+}) {
+  const [draft, setDraft] = useState(pod);
+  const [capability, setCapability] = useState("");
+  const dirty = JSON.stringify(draft) !== JSON.stringify(pod) || !!capability.trim();
+  const close = () => {
+    if (!dirty || window.confirm("Discard unsaved pod changes?")) onClose();
+  };
+  const addCapability = () => {
+    setDraft({ ...draft, capabilities: addCapabilityToList(draft.capabilities, capability) });
+    setCapability("");
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+    >
+      <DialogContent className="board-modal">
+        <DialogTitle>Edit pod</DialogTitle>
+        <DialogDescription className="sr-only">Pod settings</DialogDescription>
+        <form
+          className="editor-form grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!draft.name.trim()) return;
+            onSave({
+              ...draft,
+              name: draft.name.trim(),
+              capabilities: addCapabilityToList(draft.capabilities, capability),
+            });
+          }}
+        >
+          <label>
+            Pod name
+            <input
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              required
             />
-          ))}
-        </div>
-
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border pt-2">
-          <span className="truncate text-[10px] font-medium text-muted-foreground">
-            {pod.staff.length > 0 ? pod.staff.join(" - ") : "No staff assigned"}
-          </span>
-          {pod.closed ? (
-            <span className="shrink-0 rounded-sm bg-status-critical/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-status-critical">
-              closed
-            </span>
-          ) : immediate > 0 ? (
-            <span className="shrink-0 rounded-sm bg-status-critical/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-status-critical">
-              {immediate} red
-            </span>
-          ) : null}
-        </div>
-      </button>
-      {setup && (
-        <div className="mt-2 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
-          <input
-            type="color"
-            value={pod.color}
-            onChange={(e) => onColorChange(e.target.value)}
-            title="Pod color"
-            className="size-8 shrink-0 rounded-sm border border-border bg-background p-1"
-          />
-          <input
-            value={pod.note ?? ""}
-            onChange={(e) => onNoteChange(e.target.value)}
-            placeholder="Short pod note"
-            className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-          />
-          <button
-            type="button"
-            onClick={() => onClosedChange(!pod.closed)}
-            title={pod.closed ? "Reopen pod" : "Close pod"}
-            className={`h-8 shrink-0 rounded-sm border px-2 text-[10px] font-bold uppercase tracking-widest ${
-              pod.closed
-                ? "border-status-open bg-status-open text-background hover:opacity-90"
-                : "border-status-critical bg-status-critical text-foreground hover:opacity-90"
-            }`}
-          >
-            {pod.closed ? "Open" : "Close"}
-          </button>
-          <button
-            type="button"
-            onClick={onRemove}
-            title="Remove pod"
-            className="flex size-8 shrink-0 items-center justify-center rounded-sm border border-status-critical bg-status-critical text-sm font-bold leading-none text-foreground hover:opacity-80"
-          >
-            x
-          </button>
-          <div className="flex min-w-0 flex-col gap-2 rounded-sm border border-border bg-background/60 p-2 sm:col-span-4">
-            <div className="flex min-w-0 flex-wrap gap-1.5">
-              {pod.capabilities.length === 0 && (
-                <span className="text-[10px] font-semibold uppercase tracking-tight text-muted-foreground">
-                  No capabilities
-                </span>
-              )}
-              {pod.capabilities.map((capability) => (
+          </label>
+          <label>
+            Zone / location
+            <input
+              value={draft.zone}
+              onChange={(e) => setDraft({ ...draft, zone: e.target.value })}
+            />
+          </label>
+          <label>
+            Operational note
+            <input
+              value={draft.note ?? ""}
+              onChange={(e) => setDraft({ ...draft, note: e.target.value })}
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-4">
+            <label>
+              Pod color
+              <input
+                type="color"
+                value={draft.color}
+                onChange={(e) => setDraft({ ...draft, color: e.target.value })}
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!draft.closed}
+                onChange={(e) => setDraft({ ...draft, closed: e.target.checked })}
+              />
+              Closed to new assignments
+            </label>
+          </div>
+          <fieldset>
+            <legend className="mb-2 text-sm">Capabilities</legend>
+            <div className="mb-2 flex flex-wrap gap-2">
+              {draft.capabilities.map((item) => (
                 <span
-                  key={capability}
-                  className="inline-flex max-w-full items-center gap-1 rounded-sm border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-tight text-muted-foreground"
+                  key={item}
+                  className="inline-flex max-w-full items-center rounded-sm border pl-2 text-sm"
                 >
-                  <span className="truncate">{capability}</span>
+                  <span className="break-all">{item}</span>
                   <button
                     type="button"
-                    onClick={() => onCapabilityRemove(capability)}
-                    title={`Remove ${capability}`}
-                    className="font-mono text-xs font-bold leading-none text-status-critical hover:opacity-70"
+                    aria-label={`Remove ${item}`}
+                    title={`Remove ${item}`}
+                    className="flex size-11 shrink-0 items-center justify-center text-status-critical"
+                    onClick={() =>
+                      setDraft({
+                        ...draft,
+                        capabilities: removeCapabilityFromList(draft.capabilities, item),
+                      })
+                    }
                   >
-                    x
+                    <X size={16} />
                   </button>
                 </span>
               ))}
             </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <div className="flex gap-2">
               <input
-                value={capabilityDraft}
-                onChange={(e) => setCapabilityDraft(e.target.value)}
+                aria-label="New capability"
+                value={capability}
+                onChange={(e) => setCapability(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     addCapability();
                   }
                 }}
-                placeholder="Add capability"
-                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
               />
-              <button
-                type="button"
-                onClick={addCapability}
-                className="rounded-sm border border-signal bg-signal px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
-              >
+              <button type="button" onClick={addCapability} className="border px-3">
                 Add
               </button>
             </div>
+          </fieldset>
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" className="rounded-sm bg-signal px-4 text-background">
+              Save
+            </button>
+            <button type="button" onClick={close} className="rounded-sm border px-4">
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={pod.beds.some((bed) => !!bed.bib)}
+              onClick={() => {
+                if (onRemove()) onClose();
+              }}
+              className="ml-auto flex items-center gap-2 rounded-sm border border-status-critical px-3 text-status-critical disabled:opacity-40"
+            >
+              <Trash2 size={16} />
+              Remove pod
+            </button>
           </div>
-        </div>
-      )}
-    </div>
+          {pod.beds.some((bed) => !!bed.bib) && (
+            <p className="text-xs text-muted-foreground">
+              Move or disposition active patients before removing this pod.
+            </p>
+          )}
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -758,17 +637,11 @@ function PodDetail({
   onClose,
   onClearBed,
   onEditPatient,
-  onPatientDragStart,
-  onPatientDragEnd,
-  onPatientDrop,
 }: {
   pod: Pod;
   onClose: () => void;
   onClearBed: (bedId: string) => void;
   onEditPatient: (podId: string, bed: Bed) => void;
-  onPatientDragStart: (bedId: string, e: React.DragEvent) => void;
-  onPatientDragEnd: () => void;
-  onPatientDrop: (bedId: string, e: React.DragEvent) => void;
 }) {
   const { open, total } = podCounts(pod);
   const patients = pod.beds.filter((bed) => bed.bib);
@@ -784,10 +657,7 @@ function PodDetail({
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold tracking-tight">{pod.name}</h2>
           <p className="text-[11px] text-muted-foreground">
-            {pod.zone} -{" "}
-            {pod.closed
-              ? "closed to new assignments"
-              : "drag a patient card onto any open bed to move them"}
+            {pod.zone} - {pod.closed ? "closed to new assignments" : `${open} open beds`}
           </p>
           {pod.note && <p className="mt-1 text-[11px] font-semibold text-signal">{pod.note}</p>}
         </div>
@@ -824,19 +694,10 @@ function PodDetail({
         </div>
         {openBeds.length > 0 && (
           <div className="min-w-0">
-            <div className="text-[9px] font-bold uppercase text-muted-foreground">
-              Open bed drop targets
-            </div>
+            <div className="text-[9px] font-bold uppercase text-muted-foreground">Open beds</div>
             <div className="mt-1 flex gap-1.5">
               {openBeds.map((bed) => (
-                <BedTile
-                  key={bed.id}
-                  bed={bed}
-                  draggable={false}
-                  dropTarget
-                  className="size-9"
-                  onDrop={(e) => onPatientDrop(bed.id, e)}
-                />
+                <BedTile key={bed.id} bed={bed} podId={pod.id} className="w-11" />
               ))}
             </div>
           </div>
@@ -852,10 +713,8 @@ function PodDetail({
             key={bed.id}
             patient={patientFromBed(bed)}
             locationLabel={`${bed.label} - in ${bed.since ?? "--:--"}`}
-            title="Tap to edit. Use Move to drag to another open bed or disposition bucket"
             onEdit={() => onEditPatient(pod.id, bed)}
-            onDragStart={(e) => onPatientDragStart(bed.id, e)}
-            onDragEnd={onPatientDragEnd}
+            source={{ kind: "bed", podId: pod.id, bedId: bed.id }}
           />
         ))}
       </div>
@@ -885,40 +744,25 @@ function DispositionBucket({
   category,
   dispositions,
   disabled,
-  onDrop,
 }: {
   category: (typeof dispositionCategories)[number];
   dispositions: Disposition[];
   disabled: boolean;
-  onDrop: (category: DispositionCategory, e: React.DragEvent) => void;
 }) {
-  const [over, setOver] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div
-      onDragOver={(e) => {
-        if (disabled) return;
-        e.preventDefault();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        if (disabled) return;
-        e.preventDefault();
-        setOver(false);
-        onDrop(category.id, e);
-      }}
-      className={`rounded-md border bg-card/70 p-2.5 ${dispositionTone[category.id]} ${
-        over ? "ring-2 ring-signal bg-signal/10" : ""
-      }`}
+    <PatientDropTarget
+      target={disabled ? undefined : { kind: "disposition", category: category.id }}
+      className={`min-w-0 rounded-md border bg-card/70 p-2.5 ${expanded ? "col-span-3" : ""} ${dispositionTone[category.id]}`}
     >
       <button
         type="button"
         onClick={() => setExpanded((open) => !open)}
-        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 text-left"
+        aria-expanded={expanded}
+        className="grid min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-left"
       >
-        <span className="truncate text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        <span className="break-words text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           {category.label}
         </span>
         <span className="font-mono text-xl font-extrabold leading-none text-foreground">
@@ -951,7 +795,7 @@ function DispositionBucket({
           ))}
         </div>
       )}
-    </div>
+    </PatientDropTarget>
   );
 }
 
@@ -994,7 +838,8 @@ export function TentBoard() {
   const [editPatientStatus, setEditPatientStatus] = useState("");
   const [editPatientPod, setEditPatientPod] = useState("");
   const [editPatientMessage, setEditPatientMessage] = useState("");
-  const [dragRef, setDragRef] = useState<DragRef | null>(null);
+  const [editingPod, setEditingPod] = useState<string | null>(null);
+  const [incomingExpanded, setIncomingExpanded] = useState(false);
   const [layoutMessage, setLayoutMessage] = useState("");
 
   useEffect(() => {
@@ -1073,7 +918,7 @@ export function TentBoard() {
     setNewCapabilities("");
     setNewPodCount("1");
     setNewColor(podColorOptions[nextPods.length % podColorOptions.length]);
-    if (addedPods.length > 0) setSelectedPod(addedPods[0].id);
+    if (addedPods[0]) setSelectedPod(addedPods[0].id);
   };
 
   const resetPatientForm = () => {
@@ -1148,54 +993,22 @@ export function TentBoard() {
 
   const removePod = (id: string) => {
     const pod = pods.find((item) => item.id === id);
-    if (!pod) return;
+    if (!pod) return false;
 
     if (pod.beds.some((bed) => bed.bib)) {
       setLayoutMessage(
         `${pod.name} contains active patients. Move or disposition them before removing this pod.`,
       );
-      return;
+      return false;
     }
 
     const confirmed = window.confirm(`Remove ${pod.name} from the layout?`);
-    if (!confirmed) return;
+    if (!confirmed) return false;
 
     setPods((prev) => prev.filter((pod) => pod.id !== id));
     if (selectedPod === id) setSelectedPod(null);
     setLayoutMessage(`${pod.name} removed from layout.`);
-  };
-
-  const updatePodNote = (id: string, note: string) => {
-    setPods((prev) => prev.map((pod) => (pod.id === id ? { ...pod, note } : pod)));
-  };
-
-  const updatePodColor = (id: string, color: string) => {
-    setPods((prev) => prev.map((pod) => (pod.id === id ? { ...pod, color } : pod)));
-  };
-
-  const updatePodClosed = (id: string, closed: boolean) => {
-    setPods((prev) => prev.map((pod) => (pod.id === id ? { ...pod, closed } : pod)));
-    setLayoutMessage(closed ? "Pod closed to new assignments." : "Pod reopened.");
-  };
-
-  const addPodCapability = (id: string, capability: string) => {
-    setPods((prev) =>
-      prev.map((pod) =>
-        pod.id === id
-          ? { ...pod, capabilities: addCapabilityToList(pod.capabilities, capability) }
-          : pod,
-      ),
-    );
-  };
-
-  const removePodCapability = (id: string, capability: string) => {
-    setPods((prev) =>
-      prev.map((pod) =>
-        pod.id === id
-          ? { ...pod, capabilities: removeCapabilityFromList(pod.capabilities, capability) }
-          : pod,
-      ),
-    );
+    return true;
   };
 
   const startPatientEdit = (podId: string, bed: Bed) => {
@@ -1223,9 +1036,46 @@ export function TentBoard() {
     setEditPatientMessage("");
   };
 
-  const cancelPatientEdit = () => {
+  const finishPatientEdit = () => {
     setEditPatient(null);
     setEditPatientMessage("");
+  };
+
+  const cancelPatientEdit = () => {
+    const original =
+      editPatient?.kind === "incoming"
+        ? incomingQueue.find((patient) => patient.id === editPatient.incomingId)
+        : editPatient
+          ? pods
+              .find((pod) => pod.id === editPatient.podId)
+              ?.beds.find((bed) => bed.id === editPatient.bedId)
+          : undefined;
+    const complaint = complaintSelectionFor(original?.complaint);
+    const dirty =
+      original &&
+      (editPatientBib !== original.bib ||
+        editPatientTriage !== (original.triage ?? "untriaged") ||
+        editPatientComplaintChoice !== complaint.choice ||
+        editPatientOtherComplaint !== complaint.other ||
+        editPatientStatus !== (original.operationalStatus ?? "") ||
+        editPatientPod !== (editPatient?.kind === "bed" ? editPatient.podId : ""));
+    if (!dirty || window.confirm("Discard unsaved patient changes?")) finishPatientEdit();
+  };
+
+  const cancelNewPatient = () => {
+    const dirty =
+      newPatientBib ||
+      newPatientComplaintChoice ||
+      newPatientOtherComplaint ||
+      newPatientStatus ||
+      newPatientSource ||
+      newPatientEta ||
+      newPatientAssignPod ||
+      newPatientTriage !== "untriaged";
+    if (dirty && !window.confirm("Discard this new patient?")) return;
+    resetPatientForm();
+    setNewPatientMessage("");
+    setAddingPatient(false);
   };
 
   const savePatientEdit = (e: React.FormEvent) => {
@@ -1257,7 +1107,7 @@ export function TentBoard() {
             patient.id === editPatient.incomingId ? { ...patient, ...incomingUpdate } : patient,
           ),
         );
-        cancelPatientEdit();
+        finishPatientEdit();
         return;
       }
 
@@ -1295,7 +1145,7 @@ export function TentBoard() {
       );
       setIncomingQueue((prev) => prev.filter((patient) => patient.id !== editPatient.incomingId));
       setSelectedPod(targetPod.id);
-      cancelPatientEdit();
+      finishPatientEdit();
       return;
     }
 
@@ -1341,7 +1191,7 @@ export function TentBoard() {
         })),
       );
       setSelectedPod(targetPod.id);
-      cancelPatientEdit();
+      finishPatientEdit();
       return;
     }
 
@@ -1355,7 +1205,7 @@ export function TentBoard() {
         ),
       })),
     );
-    cancelPatientEdit();
+    finishPatientEdit();
   };
 
   const clearPatientState = () => {
@@ -1369,7 +1219,6 @@ export function TentBoard() {
     setDispositions([]);
     setSelectedPod(null);
     setEditPatient(null);
-    setDragRef(null);
   };
 
   const clearPatientData = () => {
@@ -1391,22 +1240,7 @@ export function TentBoard() {
     setEventName(DEFAULT_EVENT_NAME);
   };
 
-  const startDrag = (ref: DragRef, e: React.DragEvent) => {
-    e.dataTransfer.setData(DRAG_MIME, JSON.stringify(ref));
-    e.dataTransfer.effectAllowed = "move";
-    setDragRef(ref);
-  };
-
-  const readDropRef = (e: React.DragEvent) => {
-    const raw = e.dataTransfer.getData(DRAG_MIME);
-    return raw ? parseDragRef(raw) : dragRef;
-  };
-
-  const handleBedDrop = (targetPodId: string, targetBedId: string, e: React.DragEvent) => {
-    const ref = readDropRef(e);
-    setDragRef(null);
-    if (!ref) return;
-
+  const handleBedDrop = (targetPodId: string, targetBedId: string, ref: PatientRef) => {
     const targetPod = pods.find((pod) => pod.id === targetPodId);
     const targetBed = targetPod?.beds.find((bed) => bed.id === targetBedId);
     if (!targetPod || targetPod.closed || targetBed?.status !== "open") return;
@@ -1469,11 +1303,7 @@ export function TentBoard() {
     setSelectedPod(targetPodId);
   };
 
-  const handleDispositionDrop = (category: DispositionCategory, e: React.DragEvent) => {
-    const ref = readDropRef(e);
-    setDragRef(null);
-    if (!ref) return;
-
+  const handleDispositionDrop = (category: DispositionCategory, ref: PatientRef) => {
     if (ref.kind === "incoming") {
       const patient = incomingQueue.find((item) => item.id === ref.incomingId);
       if (!patient) return;
@@ -1529,415 +1359,469 @@ export function TentBoard() {
   ];
 
   return (
-    <div className="flex min-h-screen flex-col gap-3 bg-background p-3 font-sans text-foreground lg:p-4">
-      <header className="grid grid-cols-1 items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 xl:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
-          <div className="min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Medical Tent 1 - Charge Board
+    <PatientMovement
+      onMove={(source, target) => {
+        if (setup || editPatient || editingPod || addingPatient) return;
+        if (target.kind === "bed") handleBedDrop(target.podId, target.bedId, source);
+        else handleDispositionDrop(target.category, source);
+      }}
+    >
+      <div className="tent-board flex min-h-screen flex-col gap-3 bg-background p-2 font-sans text-foreground sm:p-3 lg:p-4">
+        <header className="grid grid-cols-1 items-center gap-2 border-b border-border bg-card px-3 py-2 xl:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Medical Tent 1 - Charge Board
+              </div>
+              <input
+                value={eventName}
+                onChange={(e) => setEventName(e.target.value)}
+                className="w-full min-w-0 rounded-sm border border-transparent bg-transparent px-0 py-0 text-lg font-semibold tracking-tight outline-none hover:border-border focus:border-signal"
+              />
             </div>
-            <input
-              value={eventName}
-              onChange={(e) => setEventName(e.target.value)}
-              className="w-full min-w-0 rounded-sm border border-transparent bg-transparent px-0 py-0 text-lg font-semibold tracking-tight outline-none hover:border-border focus:border-signal"
-            />
-          </div>
-          <div className="flex flex-wrap gap-5 font-mono">
-            {summary.map((item) => (
-              <div key={item.label}>
-                <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                  {item.label}
+            <div className="grid w-full grid-cols-3 gap-x-3 gap-y-2 font-mono sm:flex sm:w-auto sm:flex-wrap sm:gap-5">
+              {summary.map((item) => (
+                <div key={item.label}>
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                    {item.label}
+                  </div>
+                  <div className={`text-lg sm:text-3xl font-extrabold leading-none ${item.tone}`}>
+                    {item.value}
+                  </div>
                 </div>
-                <div className={`text-3xl font-extrabold leading-none ${item.tone}`}>
-                  {item.value}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="flex shrink-0 flex-col items-start gap-2 xl:items-end">
-          <button
-            type="button"
-            onClick={() => setSetup((enabled) => !enabled)}
-            className={`rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
-              setup
-                ? "border-signal bg-signal text-background"
-                : "border-signal bg-signal px-3 py-1.5 text-background hover:opacity-90"
-            }`}
-          >
-            {setup ? "Done" : "Edit layout"}
-          </button>
-          <button
-            type="button"
-            onClick={clearPatientData}
-            className="rounded-sm border border-status-occupied px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-occupied hover:bg-status-occupied hover:text-background"
-          >
-            Clear patient data
-          </button>
-          <button
-            type="button"
-            onClick={clearRace}
-            className="rounded-sm border border-status-critical px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-critical hover:bg-status-critical hover:text-foreground"
-          >
-            Clear race
-          </button>
-          <div className="flex flex-wrap gap-3 xl:justify-end">
-            {(["open", "cleaning"] as BedStatus[]).map((status) => (
-              <div key={status} className="flex items-center gap-1.5">
-                <span className={`size-3 rounded-sm border ${statusTile[status]}`} />
-                <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                  {statusLabel[status]}
-                </span>
-              </div>
-            ))}
-            {triageOptions.map((triage) => (
-              <div key={triage} className="flex items-center gap-1.5">
-                <span className={`size-3 rounded-sm border ${triageBedTile[triage]}`} />
-                <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                  {triageLabel[triage]}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </header>
-
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
-        <aside className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              <span className="size-2 rounded-full bg-status-critical" />
-              Incoming
-            </h2>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
             <button
               type="button"
-              onClick={() => setAddingPatient((open) => !open)}
-              className="rounded-sm border border-signal bg-signal px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+              onClick={() => setAddingPatient(true)}
+              className="min-h-11 rounded-sm bg-signal px-3 text-sm font-bold text-background"
             >
               New Patient
             </button>
-          </div>
-          {newPatientMessage && (
-            <p className="rounded-sm border border-signal/60 bg-signal/10 px-2 py-1 text-[11px] font-semibold text-foreground">
-              {newPatientMessage}
-            </p>
-          )}
-          {addingPatient && (
-            <form
-              onSubmit={addIncomingPatient}
-              className="flex flex-col gap-2 rounded-md border border-signal/60 bg-card p-2"
-            >
-              <input
-                value={newPatientBib}
-                onChange={(e) => setNewPatientBib(e.target.value)}
-                placeholder="Race #"
-                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                required
-              />
-              <ComplaintField
-                choice={newPatientComplaintChoice}
-                other={newPatientOtherComplaint}
-                onChoiceChange={setNewPatientComplaintChoice}
-                onOtherChange={setNewPatientOtherComplaint}
-              />
-              <input
-                value={newPatientStatus}
-                onChange={(e) => setNewPatientStatus(e.target.value)}
-                placeholder="Operational status"
-                className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-              />
-              <input
-                value={newPatientSource}
-                onChange={(e) => setNewPatientSource(e.target.value)}
-                placeholder="Source"
-                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-              />
-              <div className="rounded-sm border border-border bg-background/60 p-2">
-                <label className="block text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Assign Pod
-                </label>
-                <select
-                  value={newPatientAssignPod}
-                  onChange={(e) => setNewPatientAssignPod(e.target.value)}
-                  className="mt-1 w-full rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                >
-                  <option value="">Incoming queue</option>
-                  {pods.map((pod) => {
-                    const open = pod.closed
-                      ? 0
-                      : pod.beds.filter((bed) => bed.status === "open").length;
-                    return (
-                      <option key={pod.id} value={pod.id} disabled={pod.closed || open === 0}>
-                        {pod.name} {pod.closed ? "(closed)" : `(${open} open)`}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_80px] gap-2">
-                <select
-                  value={newPatientTriage}
-                  onChange={(e) => setNewPatientTriage(e.target.value as Triage)}
-                  aria-label="Triage"
-                  className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                >
-                  {triageOptions.map((triage) => (
-                    <option key={triage} value={triage}>
-                      {triageLabel[triage]}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={newPatientEta}
-                  onChange={(e) => setNewPatientEta(e.target.value)}
-                  placeholder="ETA"
-                  className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+            <details className="relative">
+              <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border px-3 text-sm">
+                <Settings size={16} />
+                Board settings
+              </summary>
+              <div className="absolute right-0 top-full z-20 flex w-56 flex-col gap-2 rounded-md border bg-card p-3 shadow-xl">
                 <button
-                  type="submit"
-                  className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                  type="button"
+                  onClick={() => setSetup((enabled) => !enabled)}
+                  className={`rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                    setup
+                      ? "border-signal bg-signal text-background"
+                      : "border-signal bg-signal px-3 py-1.5 text-background hover:opacity-90"
+                  }`}
                 >
-                  Add
+                  {setup ? "Done" : "Edit layout"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    resetPatientForm();
-                    setNewPatientMessage("");
-                    setAddingPatient(false);
-                  }}
-                  className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+                  onClick={clearPatientData}
+                  className="rounded-sm border border-status-occupied px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-occupied hover:bg-status-occupied hover:text-background"
                 >
-                  Cancel
+                  Clear patient data
+                </button>
+                <button
+                  type="button"
+                  onClick={clearRace}
+                  className="rounded-sm border border-status-critical px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-critical hover:bg-status-critical hover:text-foreground"
+                >
+                  Clear race
                 </button>
               </div>
-            </form>
-          )}
-          {incomingQueue.length === 0 && (
-            <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Incoming queue clear
-            </p>
-          )}
-          {incomingQueue.map((patient) => (
-            <IncomingCard
-              key={patient.id}
-              patient={patient}
-              draggable={!setup}
-              onEdit={() => startIncomingEdit(patient)}
-              onDragStart={(e) => startDrag({ kind: "incoming", incomingId: patient.id }, e)}
-              onDragEnd={() => setDragRef(null)}
-            />
-          ))}
-        </aside>
-
-        <section className="flex min-w-0 flex-col gap-3">
-          {setup && (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-signal bg-card p-3">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Add pod ({BEDS_PER_POD} open beds)
-              </span>
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Name (e.g. Pod G - Wound Care)"
-                className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-              />
-              <input
-                value={newZone}
-                onChange={(e) => setNewZone(e.target.value)}
-                placeholder="Zone / location"
-                className="w-44 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-              />
-              <input
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Operational note"
-                className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-              />
-              <input
-                value={newCapabilities}
-                onChange={(e) => setNewCapabilities(e.target.value)}
-                placeholder="Capabilities"
-                className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-              />
-              <input
-                type="number"
-                min={1}
-                max={12}
-                value={newPodCount}
-                onChange={(e) => setNewPodCount(e.target.value)}
-                aria-label="Number of pods"
-                className="w-20 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-              />
-              <input
-                type="color"
-                value={newColor}
-                onChange={(e) => setNewColor(e.target.value)}
-                title="Pod color"
-                className="size-8 rounded-sm border border-border bg-background p-1"
-              />
-              <button
-                type="button"
-                onClick={addPod}
-                className="rounded-sm border border-signal bg-signal px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
-              >
-                Add pod
-              </button>
-              <span className="w-full text-[10px] text-muted-foreground">
-                In edit mode, patient movement is paused while the tent layout is adjusted.
-              </span>
-              {layoutMessage && (
-                <span className="w-full rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
-                  {layoutMessage}
-                </span>
-              )}
-            </div>
-          )}
-          <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
-            {pods.map((pod) => (
-              <PodCard
-                key={pod.id}
-                pod={pod}
-                selected={selectedPod === pod.id}
-                setup={setup}
-                onSelect={() => !setup && setSelectedPod(selectedPod === pod.id ? null : pod.id)}
-                onRemove={() => removePod(pod.id)}
-                onNoteChange={(note) => updatePodNote(pod.id, note)}
-                onColorChange={(color) => updatePodColor(pod.id, color)}
-                onClosedChange={(closed) => updatePodClosed(pod.id, closed)}
-                onCapabilityAdd={(capability) => addPodCapability(pod.id, capability)}
-                onCapabilityRemove={(capability) => removePodCapability(pod.id, capability)}
-                onPatientDragStart={(bedId, e) =>
-                  startDrag({ kind: "bed", podId: pod.id, bedId }, e)
-                }
-                onPatientDragEnd={() => setDragRef(null)}
-                onPatientDrop={(bedId, e) => handleBedDrop(pod.id, bedId, e)}
-              />
-            ))}
-          </div>
-          {editPatient && !setup && (
-            <form
-              onSubmit={savePatientEdit}
-              className="grid gap-2 rounded-lg border border-signal bg-card p-3 md:grid-cols-[100px_120px_minmax(0,1.15fr)_minmax(0,1fr)_180px_auto]"
-            >
-              <div className="md:col-span-6">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Edit Patient
+            </details>
+            <div className="hidden flex-wrap gap-3 sm:flex xl:justify-end">
+              {(["open", "cleaning"] as BedStatus[]).map((status) => (
+                <div key={status} className="flex items-center gap-1.5">
+                  <span className={`size-3 rounded-sm border ${statusTile[status]}`} />
+                  <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                    {statusLabel[status]}
+                  </span>
                 </div>
-              </div>
-              <input
-                value={editPatientBib}
-                onChange={(e) => setEditPatientBib(e.target.value)}
-                placeholder="Race #"
-                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                required
-              />
-              <select
-                value={editPatientTriage}
-                onChange={(e) => setEditPatientTriage(e.target.value as Triage)}
-                aria-label="Triage"
-                className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-              >
-                {triageOptions.map((triage) => (
-                  <option key={triage} value={triage}>
+              ))}
+              {triageOptions.map((triage) => (
+                <div key={triage} className="flex items-center gap-1.5">
+                  <span className={`size-3 rounded-sm border ${triageBedTile[triage]}`} />
+                  <span className="text-[10px] font-semibold uppercase text-muted-foreground">
                     {triageLabel[triage]}
-                  </option>
-                ))}
-              </select>
-              <ComplaintField
-                choice={editPatientComplaintChoice}
-                other={editPatientOtherComplaint}
-                onChoiceChange={setEditPatientComplaintChoice}
-                onOtherChange={setEditPatientOtherComplaint}
-              />
-              <input
-                value={editPatientStatus}
-                onChange={(e) => setEditPatientStatus(e.target.value)}
-                placeholder="Operational status"
-                className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-              />
-              <select
-                value={editPatientPod}
-                onChange={(e) => setEditPatientPod(e.target.value)}
-                aria-label="Move to pod"
-                className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-              >
-                {editPatient.kind === "incoming" && <option value="">Incoming queue</option>}
-                {pods.map((pod) => {
-                  const open = pod.closed
-                    ? 0
-                    : pod.beds.filter((bed) => bed.status === "open").length;
-                  const current = editPatient.kind === "bed" && editPatient.podId === pod.id;
-                  return (
-                    <option
-                      key={pod.id}
-                      value={pod.id}
-                      disabled={!current && (pod.closed || open === 0)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </header>
+
+        <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
+          <aside className="order-2 flex min-w-0 flex-col gap-2 border-t border-border py-2 xl:order-1">
+            <button
+              type="button"
+              onClick={() => setIncomingExpanded((open) => !open)}
+              aria-expanded={incomingExpanded}
+              className="flex min-h-11 items-center justify-between border-b border-border text-left text-sm font-bold"
+            >
+              <span>Incoming ({incomingQueue.length})</span>
+              <span className="xl:hidden">{incomingExpanded ? "−" : "+"}</span>
+            </button>
+            {newPatientMessage && (
+              <p className="rounded-sm border border-signal/60 bg-signal/10 px-2 py-1 text-[11px] font-semibold text-foreground">
+                {newPatientMessage}
+              </p>
+            )}
+            <Dialog
+              open={addingPatient}
+              onOpenChange={(open) => {
+                if (!open) cancelNewPatient();
+              }}
+            >
+              <DialogContent className="board-modal">
+                <DialogTitle>New Patient</DialogTitle>
+                <DialogDescription className="sr-only">
+                  Patient arrival and assignment
+                </DialogDescription>
+                {newPatientMessage && <p role="alert">{newPatientMessage}</p>}
+                <form onSubmit={addIncomingPatient} className="editor-form flex flex-col gap-3">
+                  <label>
+                    Race #
+                    <input
+                      value={newPatientBib}
+                      onChange={(e) => setNewPatientBib(e.target.value)}
+                      placeholder="Race #"
+                      className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                      required
+                    />
+                  </label>
+                  <ComplaintField
+                    choice={newPatientComplaintChoice}
+                    other={newPatientOtherComplaint}
+                    onChoiceChange={setNewPatientComplaintChoice}
+                    onOtherChange={setNewPatientOtherComplaint}
+                  />
+                  <label>
+                    Operational status
+                    <input
+                      value={newPatientStatus}
+                      onChange={(e) => setNewPatientStatus(e.target.value)}
+                      placeholder="Operational status"
+                      className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                    />
+                  </label>
+                  <label>
+                    Source
+                    <input
+                      value={newPatientSource}
+                      onChange={(e) => setNewPatientSource(e.target.value)}
+                      placeholder="Source"
+                      className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                    />
+                  </label>
+                  <label>
+                    Assign Pod
+                    <select
+                      value={newPatientAssignPod}
+                      onChange={(e) => setNewPatientAssignPod(e.target.value)}
+                      className="mt-1 w-full rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
                     >
-                      {pod.name}{" "}
-                      {current ? "(current)" : pod.closed ? "(closed)" : `(${open} open)`}
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="submit"
-                  className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelPatientEdit}
-                  className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
-                >
-                  Cancel
-                </button>
-              </div>
-              {editPatientMessage && (
-                <p className="md:col-span-6 rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
-                  {editPatientMessage}
+                      <option value="">Incoming queue</option>
+                      {pods.map((pod) => {
+                        const open = pod.closed
+                          ? 0
+                          : pod.beds.filter((bed) => bed.status === "open").length;
+                        return (
+                          <option key={pod.id} value={pod.id} disabled={pod.closed || open === 0}>
+                            {pod.name} {pod.closed ? "(closed)" : `(${open} open)`}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-[minmax(0,1fr)_80px] gap-2">
+                    <label>
+                      Triage
+                      <select
+                        value={newPatientTriage}
+                        onChange={(e) => setNewPatientTriage(e.target.value as Triage)}
+                        aria-label="Triage"
+                        className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                      >
+                        {triageOptions.map((triage) => (
+                          <option key={triage} value={triage}>
+                            {triageLabel[triage]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      ETA
+                      <input
+                        value={newPatientEta}
+                        onChange={(e) => setNewPatientEta(e.target.value)}
+                        placeholder="ETA"
+                        className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="submit"
+                      className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelNewPatient}
+                      className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+            <div className={`flex-col gap-2 ${incomingExpanded ? "flex" : "hidden xl:flex"}`}>
+              {incomingQueue.length === 0 && (
+                <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Incoming queue clear
                 </p>
               )}
-            </form>
-          )}
-          {selected && !setup ? (
-            <PodDetail
-              pod={selected}
-              onClose={() => setSelectedPod(null)}
-              onClearBed={(bedId) => clearTurnoverBed(selected.id, bedId)}
-              onEditPatient={startPatientEdit}
-              onPatientDragStart={(bedId, e) =>
-                startDrag({ kind: "bed", podId: selected.id, bedId }, e)
-              }
-              onPatientDragEnd={() => setDragRef(null)}
-              onPatientDrop={(bedId, e) => handleBedDrop(selected.id, bedId, e)}
-            />
-          ) : !setup ? (
-            <p className="rounded-lg border border-dashed border-border px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Select a pod to see patient cards - drag incoming patients onto any open bed
-            </p>
-          ) : null}
-        </section>
+              {incomingQueue.map((patient) => (
+                <IncomingCard
+                  key={patient.id}
+                  patient={patient}
+                  disabled={setup}
+                  onEdit={() => startIncomingEdit(patient)}
+                />
+              ))}
+            </div>
+          </aside>
 
-        <aside className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Disposition
-          </h2>
-          {dispositionCounts.map((category) => (
-            <DispositionBucket
-              key={category.id}
-              category={category}
-              dispositions={category.dispositions}
-              disabled={setup}
-              onDrop={handleDispositionDrop}
-            />
-          ))}
-        </aside>
-      </main>
-    </div>
+          <section className="order-1 flex min-w-0 flex-col gap-3 xl:order-2">
+            {setup && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-signal bg-card p-3">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Add pod ({BEDS_PER_POD} open beds)
+                </span>
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Name (e.g. Pod G - Wound Care)"
+                  className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                />
+                <input
+                  value={newZone}
+                  onChange={(e) => setNewZone(e.target.value)}
+                  placeholder="Zone / location"
+                  className="w-44 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                />
+                <input
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Operational note"
+                  className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                />
+                <input
+                  value={newCapabilities}
+                  onChange={(e) => setNewCapabilities(e.target.value)}
+                  placeholder="Capabilities"
+                  className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={newPodCount}
+                  onChange={(e) => setNewPodCount(e.target.value)}
+                  aria-label="Number of pods"
+                  className="w-20 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                />
+                <input
+                  type="color"
+                  value={newColor}
+                  onChange={(e) => setNewColor(e.target.value)}
+                  title="Pod color"
+                  className="size-8 rounded-sm border border-border bg-background p-1"
+                />
+                <button
+                  type="button"
+                  onClick={addPod}
+                  className="rounded-sm border border-signal bg-signal px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                >
+                  Add pod
+                </button>
+                <span className="w-full text-[10px] text-muted-foreground">
+                  In edit mode, patient movement is paused while the tent layout is adjusted.
+                </span>
+                {layoutMessage && (
+                  <span className="w-full rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
+                    {layoutMessage}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="pod-grid grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
+              {pods.map((pod) => (
+                <PodCard
+                  key={pod.id}
+                  pod={pod}
+                  selected={selectedPod === pod.id}
+                  setup={setup}
+                  onSelect={() => setSelectedPod(selectedPod === pod.id ? null : pod.id)}
+                  onEdit={() => setEditingPod(pod.id)}
+                  onEditPatient={startPatientEdit}
+                />
+              ))}
+            </div>
+            {editingPod && pods.find((pod) => pod.id === editingPod) && (
+              <PodEditor
+                key={editingPod}
+                pod={pods.find((pod) => pod.id === editingPod)!}
+                onClose={() => setEditingPod(null)}
+                onRemove={() => removePod(editingPod)}
+                onSave={(draft) => {
+                  setPods((previous) =>
+                    previous.map((pod) =>
+                      pod.id === draft.id ? { ...draft, beds: pod.beds } : pod,
+                    ),
+                  );
+                  setEditingPod(null);
+                }}
+              />
+            )}
+            <Dialog
+              open={!!editPatient}
+              onOpenChange={(open) => {
+                if (!open) cancelPatientEdit();
+              }}
+            >
+              <DialogContent className="board-modal">
+                <DialogTitle>Edit Patient</DialogTitle>
+                <DialogDescription className="sr-only">
+                  Patient information and pod assignment
+                </DialogDescription>
+                {editPatient && (
+                  <form onSubmit={savePatientEdit} className="editor-form grid gap-3">
+                    <label>
+                      Race #
+                      <input
+                        value={editPatientBib}
+                        onChange={(e) => setEditPatientBib(e.target.value)}
+                        placeholder="Race #"
+                        className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Triage
+                      <select
+                        value={editPatientTriage}
+                        onChange={(e) => setEditPatientTriage(e.target.value as Triage)}
+                        aria-label="Triage"
+                        className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                      >
+                        {triageOptions.map((triage) => (
+                          <option key={triage} value={triage}>
+                            {triageLabel[triage]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <ComplaintField
+                      choice={editPatientComplaintChoice}
+                      other={editPatientOtherComplaint}
+                      onChoiceChange={setEditPatientComplaintChoice}
+                      onOtherChange={setEditPatientOtherComplaint}
+                    />
+                    <label>
+                      Operational status
+                      <input
+                        value={editPatientStatus}
+                        onChange={(e) => setEditPatientStatus(e.target.value)}
+                        placeholder="Operational status"
+                        className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                      />
+                    </label>
+                    <label>
+                      Assign Pod
+                      <select
+                        value={editPatientPod}
+                        onChange={(e) => setEditPatientPod(e.target.value)}
+                        aria-label="Move to pod"
+                        className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                      >
+                        {editPatient.kind === "incoming" && (
+                          <option value="">Incoming queue</option>
+                        )}
+                        {pods.map((pod) => {
+                          const open = pod.closed
+                            ? 0
+                            : pod.beds.filter((bed) => bed.status === "open").length;
+                          const current =
+                            editPatient.kind === "bed" && editPatient.podId === pod.id;
+                          return (
+                            <option
+                              key={pod.id}
+                              value={pod.id}
+                              disabled={!current && (pod.closed || open === 0)}
+                            >
+                              {pod.name}{" "}
+                              {current ? "(current)" : pod.closed ? "(closed)" : `(${open} open)`}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="submit"
+                        className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelPatientEdit}
+                        className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {editPatientMessage && (
+                      <p className="rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
+                        {editPatientMessage}
+                      </p>
+                    )}
+                  </form>
+                )}
+              </DialogContent>
+            </Dialog>
+            {selected && !setup ? (
+              <PodDetail
+                pod={selected}
+                onClose={() => setSelectedPod(null)}
+                onClearBed={(bedId) => clearTurnoverBed(selected.id, bedId)}
+                onEditPatient={startPatientEdit}
+              />
+            ) : null}
+          </section>
+
+          <aside className="order-3 grid min-w-0 grid-cols-3 content-start gap-2 border-t border-border py-2 xl:flex xl:flex-col">
+            <h2 className="col-span-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Disposition
+            </h2>
+            {dispositionCounts.map((category) => (
+              <DispositionBucket
+                key={category.id}
+                category={category}
+                dispositions={category.dispositions}
+                disabled={setup}
+              />
+            ))}
+          </aside>
+        </main>
+      </div>
+    </PatientMovement>
   );
 }
