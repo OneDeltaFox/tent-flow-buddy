@@ -1509,24 +1509,6 @@ export function TentBoard() {
                     onOtherChange={setNewPatientOtherComplaint}
                   />
                   <label>
-                    Operational status
-                    <input
-                      value={newPatientStatus}
-                      onChange={(e) => setNewPatientStatus(e.target.value)}
-                      placeholder="Operational status"
-                      className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                    />
-                  </label>
-                  <label>
-                    Source
-                    <input
-                      value={newPatientSource}
-                      onChange={(e) => setNewPatientSource(e.target.value)}
-                      placeholder="Source"
-                      className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                    />
-                  </label>
-                  <label>
                     Assign Pod
                     <select
                       value={newPatientAssignPod}
@@ -1546,32 +1528,48 @@ export function TentBoard() {
                       })}
                     </select>
                   </label>
-                  <div className="grid grid-cols-[minmax(0,1fr)_80px] gap-2">
-                    <label>
-                      Triage
-                      <select
-                        value={newPatientTriage}
-                        onChange={(e) => setNewPatientTriage(e.target.value as Triage)}
-                        aria-label="Triage"
-                        className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                      >
-                        {triageOptions.map((triage) => (
-                          <option key={triage} value={triage}>
-                            {triageLabel[triage]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      ETA
-                      <input
-                        value={newPatientEta}
-                        onChange={(e) => setNewPatientEta(e.target.value)}
-                        placeholder="ETA"
-                        className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                      />
-                    </label>
-                  </div>
+                  <label>
+                    Triage
+                    <select
+                      value={newPatientTriage}
+                      onChange={(e) => setNewPatientTriage(e.target.value as Triage)}
+                      aria-label="Triage"
+                      className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                    >
+                      {triageOptions.map((triage) => (
+                        <option key={triage} value={triage}>
+                          {triageLabel[triage]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Operational status
+                    <input
+                      value={newPatientStatus}
+                      onChange={(e) => setNewPatientStatus(e.target.value)}
+                      placeholder="Operational status"
+                      className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                    />
+                  </label>
+                  <label>
+                    Source
+                    <input
+                      value={newPatientSource}
+                      onChange={(e) => setNewPatientSource(e.target.value)}
+                      placeholder="Source"
+                      className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                    />
+                  </label>
+                  <label>
+                    ETA
+                    <input
+                      value={newPatientEta}
+                      onChange={(e) => setNewPatientEta(e.target.value)}
+                      placeholder="ETA"
+                      className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                    />
+                  </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="submit"
