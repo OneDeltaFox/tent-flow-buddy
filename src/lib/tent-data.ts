@@ -103,6 +103,7 @@ export function emptyPod(
   note = "",
   color = "#38bdf8",
   number = 1,
+  bedCount = BEDS_PER_POD,
 ): Pod {
   return {
     id,
@@ -113,10 +114,13 @@ export function emptyPod(
     color,
     capabilities: [],
     staff: [],
-    beds: Array.from({ length: BEDS_PER_POD }, (_, i) => ({
-      ...bed(`${id}${i + 1}`, "open"),
-      label: `${number}-${i + 1}`,
-    })),
+    beds: Array.from(
+      { length: Math.max(1, Math.min(12, Math.trunc(bedCount) || BEDS_PER_POD)) },
+      (_, i) => ({
+        ...bed(`${id}${i + 1}`, "open"),
+        label: `${number}-${i + 1}`,
+      }),
+    ),
   };
 }
 

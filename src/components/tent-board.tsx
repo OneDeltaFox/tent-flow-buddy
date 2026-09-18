@@ -456,7 +456,9 @@ function PodCard({
           <Pencil size={16} />
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+      <div
+        className={`grid gap-1.5 ${pod.beds.length === 1 ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-4"}`}
+      >
         {pod.beds.map((bed) => (
           <BedTile
             key={bed.id}
@@ -474,6 +476,36 @@ function PodCard({
         {pod.capabilities.length > 0 && <p className="truncate">{pod.capabilities.join(", ")}</p>}
       </div>
     </article>
+  );
+}
+
+function PodColorPresets({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange: (color: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1" aria-label="Pod color presets">
+      {[
+        ["Orange", "#f97316"],
+        ["Yellow", "#facc15"],
+        ["Cyan", "#06b6d4"],
+      ].map(([name, color]) => (
+        <button
+          key={color}
+          type="button"
+          aria-label={`${name} pod color`}
+          title={name}
+          aria-pressed={value === color}
+          onClick={() => onChange(color!)}
+          className={`flex size-11 items-center justify-center rounded-sm border ${value === color ? "ring-2 ring-signal" : "border-border"}`}
+        >
+          <span className="size-6 rounded-sm" style={{ backgroundColor: color }} />
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -551,6 +583,10 @@ function PodEditor({
                 onChange={(e) => setDraft({ ...draft, color: e.target.value })}
               />
             </label>
+            <PodColorPresets
+              value={draft.color}
+              onChange={(color) => setDraft({ ...draft, color })}
+            />
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -821,6 +857,7 @@ export function TentBoard() {
   const [newCapabilities, setNewCapabilities] = useState("");
   const [newColor, setNewColor] = useState(podColorOptions[0]);
   const [newPodCount, setNewPodCount] = useState("1");
+  const [newBedCount, setNewBedCount] = useState(String(BEDS_PER_POD));
   const [addingPatient, setAddingPatient] = useState(false);
   const [newPatientBib, setNewPatientBib] = useState("");
   const [newPatientTriage, setNewPatientTriage] = useState<Triage>("untriaged");
@@ -913,6 +950,7 @@ export function TentBoard() {
         newNote.trim(),
         newColor,
         number,
+        Number.parseInt(newBedCount, 10),
       );
       pod.capabilities = capabilities;
       nextPods.push(pod);
@@ -1609,7 +1647,7 @@ export function TentBoard() {
             {setup && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-signal bg-card p-3">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Add pod ({BEDS_PER_POD} open beds)
+                  Add pods
                 </span>
                 <input
                   value={newName}
@@ -1651,6 +1689,18 @@ export function TentBoard() {
                   title="Pod color"
                   className="size-8 rounded-sm border border-border bg-background p-1"
                 />
+                <PodColorPresets value={newColor} onChange={setNewColor} />
+                <label className="flex items-center gap-2 text-xs">
+                  Beds per pod
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={newBedCount}
+                    onChange={(e) => setNewBedCount(e.target.value)}
+                    className="min-h-11 w-16 rounded-sm border border-border bg-background px-2"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={addPod}

@@ -26,3 +26,11 @@ test("numbered pod names and new pods use their own number", () => {
   expect(newPod.beds.map((bed) => bed.label)).toEqual(["13-1", "13-2", "13-3", "13-4"]);
   expect(newPod.beds[0].id).toBe("G1");
 });
+
+test("single-bed pools retain their capacity after normalization", () => {
+  const pool = emptyPod("Q", "Pool 1", "", "", "#06b6d4", 17, 1);
+  expect(pool.beds).toHaveLength(1);
+  expect(pool.beds[0]).toMatchObject({ id: "Q1", label: "17-1", status: "open" });
+  expect(numberPodBeds([pool])[0].beds).toHaveLength(1);
+  expect(emptyPod("R", "Pod 18", "").beds).toHaveLength(4);
+});
