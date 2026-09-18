@@ -1742,11 +1742,11 @@ export function TentBoard() {
                       onOtherChange={setEditPatientOtherComplaint}
                     />
                     <label>
-                      Operational status
+                      Notes
                       <input
                         value={editPatientStatus}
                         onChange={(e) => setEditPatientStatus(e.target.value)}
-                        placeholder="Operational status"
+                        placeholder="Notes"
                         className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
                       />
                     </label>

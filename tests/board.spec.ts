@@ -82,7 +82,7 @@ test("patient modal saves and protects unsaved changes", async ({ page }) => {
   await page.getByRole("button", { name: "Edit patient A100", exact: true }).click();
   const modal = page.getByRole("dialog", { name: "Edit Patient" });
   await expect(modal).toBeVisible();
-  await modal.getByLabel("Operational status").fill("Awaiting transport");
+  await modal.getByLabel("Notes").fill("Awaiting transport");
   page.once("dialog", (dialog) => dialog.dismiss());
   await modal.getByRole("button", { name: "Cancel" }).click();
   await expect(modal).toBeVisible();
