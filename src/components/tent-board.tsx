@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Pencil, Settings, Trash2, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PatientMovement, PatientSurface, PatientDropTarget } from "@/components/patient-movement";
@@ -94,6 +94,33 @@ type PatientSummary = {
 
 type EditPatientRef =
   { kind: "bed"; podId: string; bedId: string } | { kind: "incoming"; incomingId: string };
+
+const DispositionActionContext = createContext<
+  ((ref: PatientRef, bib: string, category: DispositionCategory) => void) | null
+>(null);
+
+function PatientDispositionMenu({ source, bib }: { source: PatientRef; bib: string }) {
+  const requestDisposition = useContext(DispositionActionContext);
+  return (
+    <select
+      aria-label={`Disposition patient ${bib}`}
+      value=""
+      onChange={(event) =>
+        requestDisposition?.(source, bib, event.target.value as DispositionCategory)
+      }
+      className="min-h-11 w-full min-w-0 rounded-sm border border-border bg-background px-1 text-[10px] text-foreground"
+    >
+      <option value="" disabled>
+        Disposition
+      </option>
+      {dispositionCategories.map((category) => (
+        <option key={category.id} value={category.id}>
+          {category.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function formatBoardTime() {
   return new Intl.DateTimeFormat("en-US", {
@@ -244,6 +271,7 @@ function dispositionRecord(
   category: DispositionCategory,
   patient: PatientSummary,
   from: string,
+  description?: string,
 ): Disposition {
   return {
     id: `${Date.now()}-${patient.bib}-${category}`,
@@ -253,6 +281,7 @@ function dispositionRecord(
     from,
     triage: patient.triage,
     complaint: patient.complaint,
+    description,
   };
 }
 
@@ -297,6 +326,9 @@ function BedTile({
           {bed.bib ?? (bed.status === "cleaning" ? "CLR" : bed.label)}
         </span>
       </PatientSurface>
+      {bed.bib && onEdit && (
+        <PatientDispositionMenu source={{ kind: "bed", podId, bedId: bed.id }} bib={bed.bib} />
+      )}
     </PatientDropTarget>
   );
 }
@@ -306,31 +338,40 @@ function PatientCard({
   locationLabel,
   source,
   onEdit,
+  dispositionSource,
 }: {
   patient: PatientSummary;
   locationLabel: string;
   source?: PatientRef | undefined;
   onEdit?: (() => void) | undefined;
+  dispositionSource?: PatientRef | undefined;
 }) {
   return (
-    <PatientSurface
-      source={source}
-      bib={patient.bib}
-      onEdit={onEdit}
-      className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border px-3 py-2.5 ${triageBedTile[patient.triage ?? "untriaged"]}`}
-    >
-      <span className="max-w-full break-all font-mono text-lg font-extrabold">#{patient.bib}</span>
-      <div className="min-w-0 flex-1 basis-24">
-        <p className="break-words text-sm font-semibold">
-          {patient.complaint || "Needs placement"}
-        </p>
-        <p className="text-xs">{triageLabel[patient.triage ?? "untriaged"]}</p>
-        {patient.operationalStatus && (
-          <p className="break-words text-xs">{patient.operationalStatus}</p>
-        )}
-      </div>
-      <span className="font-mono text-[10px]">{locationLabel}</span>
-    </PatientSurface>
+    <div className="min-w-0">
+      <PatientSurface
+        source={source}
+        bib={patient.bib}
+        onEdit={onEdit}
+        className={`flex min-w-0 flex-wrap items-center gap-2 rounded-md border px-3 py-2.5 ${triageBedTile[patient.triage ?? "untriaged"]}`}
+      >
+        <span className="max-w-full break-all font-mono text-lg font-extrabold">
+          #{patient.bib}
+        </span>
+        <div className="min-w-0 flex-1 basis-24">
+          <p className="break-words text-sm font-semibold">
+            {patient.complaint || "Needs placement"}
+          </p>
+          <p className="text-xs">{triageLabel[patient.triage ?? "untriaged"]}</p>
+          {patient.operationalStatus && (
+            <p className="break-words text-xs">{patient.operationalStatus}</p>
+          )}
+        </div>
+        <span className="font-mono text-[10px]">{locationLabel}</span>
+      </PatientSurface>
+      {onEdit && (dispositionSource || source) && (
+        <PatientDispositionMenu source={(dispositionSource || source)!} bib={patient.bib} />
+      )}
+    </div>
   );
 }
 
@@ -748,6 +789,7 @@ function PodDetail({
             <PatientCard
               key={bed.id}
               patient={patientFromBed(bed)}
+              dispositionSource={{ kind: "bed", podId: pod.id, bedId: bed.id }}
               locationLabel={`${bed.label} - in ${bed.since ?? "--:--"}`}
               onEdit={() => onEditPatient(pod.id, bed)}
             />
@@ -827,6 +869,7 @@ function DispositionBucket({
                 {item.from}
                 {item.complaint ? ` - ${item.complaint}` : ""}
               </p>
+              {item.description && <p className="break-words text-xs">{item.description}</p>}
             </div>
           ))}
         </div>
@@ -847,6 +890,12 @@ export function TentBoard() {
   const [pods, setPods] = useState<Pod[]>(initialPods);
   const [incomingQueue, setIncomingQueue] = useState<Incoming[]>(initialIncoming);
   const [dispositions, setDispositions] = useState<Disposition[]>(initialDispositions);
+  const [pendingDisposition, setPendingDisposition] = useState<{
+    ref: PatientRef;
+    bib: string;
+    category: DispositionCategory;
+  } | null>(null);
+  const [dispositionDescription, setDispositionDescription] = useState("");
   const [eventName, setEventName] = useState(DEFAULT_EVENT_NAME);
   const [currentClock, setCurrentClock] = useState("--:--");
   const [hydrated, setHydrated] = useState(false);
@@ -1345,13 +1394,22 @@ export function TentBoard() {
     );
   };
 
-  const handleDispositionDrop = (category: DispositionCategory, ref: PatientRef) => {
+  const handleDispositionDrop = (
+    category: DispositionCategory,
+    ref: PatientRef,
+    description?: string,
+  ) => {
     if (ref.kind === "incoming") {
       const patient = incomingQueue.find((item) => item.id === ref.incomingId);
       if (!patient) return;
 
       setDispositions((prev) => [
-        dispositionRecord(category, patientFromIncoming(patient), patient.source ?? "Incoming"),
+        dispositionRecord(
+          category,
+          patientFromIncoming(patient),
+          patient.source ?? "Incoming",
+          description,
+        ),
         ...prev,
       ]);
       setIncomingQueue((prev) => prev.filter((item) => item.id !== ref.incomingId));
@@ -1367,6 +1425,7 @@ export function TentBoard() {
         category,
         patientFromBed(sourceBed),
         `${sourcePod.name} ${sourceBed.label}`,
+        description,
       ),
       ...prev,
     ]);
@@ -1401,377 +1460,198 @@ export function TentBoard() {
   ];
 
   return (
-    <PatientMovement
-      onMove={(source, target) => {
-        if (setup || selectedPod || editPatient || editingPod || addingPatient) return;
-        if (target.kind === "bed") handleBedDrop(target.podId, target.bedId, source);
-        else handleDispositionDrop(target.category, source);
+    <DispositionActionContext.Provider
+      value={(ref, bib, category) => {
+        setDispositionDescription("");
+        setPendingDisposition({ ref, bib, category });
       }}
     >
-      <div className="tent-board flex min-h-screen flex-col gap-3 bg-background p-2 font-sans text-foreground sm:p-3 lg:p-4">
-        <header className="grid grid-cols-1 items-center gap-2 border-b border-border bg-card px-3 py-2 xl:grid-cols-[minmax(0,1fr)_auto]">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Medical Tent 1 - Charge Board
+      <PatientMovement
+        onMove={(source, target) => {
+          if (
+            setup ||
+            selectedPod ||
+            editPatient ||
+            editingPod ||
+            addingPatient ||
+            pendingDisposition
+          )
+            return;
+          if (target.kind === "bed") handleBedDrop(target.podId, target.bedId, source);
+          else if (target.category === "other") {
+            const bib =
+              source.kind === "incoming"
+                ? incomingQueue.find((patient) => patient.id === source.incomingId)?.bib
+                : pods
+                    .find((pod) => pod.id === source.podId)
+                    ?.beds.find((bed) => bed.id === source.bedId)?.bib;
+            if (bib) {
+              setDispositionDescription("");
+              setPendingDisposition({ ref: source, bib, category: "other" });
+            }
+          } else handleDispositionDrop(target.category, source);
+        }}
+      >
+        <div className="tent-board flex min-h-screen flex-col gap-3 bg-background p-2 font-sans text-foreground sm:p-3 lg:p-4">
+          <header className="grid grid-cols-1 items-center gap-2 border-b border-border bg-card px-3 py-2 xl:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Medical Tent 1 - Charge Board
+                </div>
+                <input
+                  value={eventName}
+                  onChange={(e) => setEventName(e.target.value)}
+                  className="w-full min-w-0 rounded-sm border border-transparent bg-transparent px-0 py-0 text-lg font-semibold tracking-tight outline-none hover:border-border focus:border-signal"
+                />
               </div>
-              <input
-                value={eventName}
-                onChange={(e) => setEventName(e.target.value)}
-                className="w-full min-w-0 rounded-sm border border-transparent bg-transparent px-0 py-0 text-lg font-semibold tracking-tight outline-none hover:border-border focus:border-signal"
-              />
-            </div>
-            <div className="grid w-full grid-cols-3 gap-x-3 gap-y-2 font-mono sm:flex sm:w-auto sm:flex-wrap sm:gap-5">
-              {summary.map((item) => (
-                <div key={item.label}>
-                  <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                    {item.label}
+              <div className="grid w-full grid-cols-3 gap-x-3 gap-y-2 font-mono sm:flex sm:w-auto sm:flex-wrap sm:gap-5">
+                {summary.map((item) => (
+                  <div key={item.label}>
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                      {item.label}
+                    </div>
+                    <div className={`text-lg sm:text-3xl font-extrabold leading-none ${item.tone}`}>
+                      {item.value}
+                    </div>
                   </div>
-                  <div className={`text-lg sm:text-3xl font-extrabold leading-none ${item.tone}`}>
-                    {item.value}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
-            <button
-              type="button"
-              onClick={() => setAddingPatient(true)}
-              className="min-h-11 rounded-sm bg-signal px-3 text-sm font-bold text-background"
-            >
-              New Patient
-            </button>
-            <details className="relative">
-              <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border px-3 text-sm">
-                <Settings size={16} />
-                Board settings
-              </summary>
-              <div className="absolute right-0 top-full z-20 flex w-56 flex-col gap-2 rounded-md border bg-card p-3 shadow-xl">
-                <button
-                  type="button"
-                  onClick={() => setSetup((enabled) => !enabled)}
-                  className={`rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
-                    setup
-                      ? "border-signal bg-signal text-background"
-                      : "border-signal bg-signal px-3 py-1.5 text-background hover:opacity-90"
-                  }`}
-                >
-                  {setup ? "Done" : "Edit layout"}
-                </button>
-                <button
-                  type="button"
-                  onClick={clearPatientData}
-                  className="rounded-sm border border-status-occupied px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-occupied hover:bg-status-occupied hover:text-background"
-                >
-                  Clear patient data
-                </button>
-                <button
-                  type="button"
-                  onClick={clearRace}
-                  className="rounded-sm border border-status-critical px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-critical hover:bg-status-critical hover:text-foreground"
-                >
-                  Clear race
-                </button>
+                ))}
               </div>
-            </details>
-            <div className="hidden flex-wrap gap-3 sm:flex xl:justify-end">
-              {(["open", "cleaning"] as BedStatus[]).map((status) => (
-                <div key={status} className="flex items-center gap-1.5">
-                  <span className={`size-3 rounded-sm border ${statusTile[status]}`} />
-                  <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                    {statusLabel[status]}
-                  </span>
-                </div>
-              ))}
-              {triageOptions.map((triage) => (
-                <div key={triage} className="flex items-center gap-1.5">
-                  <span className={`size-3 rounded-sm border ${triageBedTile[triage]}`} />
-                  <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                    {triageLabel[triage]}
-                  </span>
-                </div>
-              ))}
             </div>
-          </div>
-        </header>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
+              <button
+                type="button"
+                onClick={() => setAddingPatient(true)}
+                className="min-h-11 rounded-sm bg-signal px-3 text-sm font-bold text-background"
+              >
+                New Patient
+              </button>
+              <details className="relative">
+                <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border px-3 text-sm">
+                  <Settings size={16} />
+                  Board settings
+                </summary>
+                <div className="absolute right-0 top-full z-20 flex w-56 flex-col gap-2 rounded-md border bg-card p-3 shadow-xl">
+                  <button
+                    type="button"
+                    onClick={() => setSetup((enabled) => !enabled)}
+                    className={`rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                      setup
+                        ? "border-signal bg-signal text-background"
+                        : "border-signal bg-signal px-3 py-1.5 text-background hover:opacity-90"
+                    }`}
+                  >
+                    {setup ? "Done" : "Edit layout"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearPatientData}
+                    className="rounded-sm border border-status-occupied px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-occupied hover:bg-status-occupied hover:text-background"
+                  >
+                    Clear patient data
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearRace}
+                    className="rounded-sm border border-status-critical px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-status-critical hover:bg-status-critical hover:text-foreground"
+                  >
+                    Clear race
+                  </button>
+                </div>
+              </details>
+              <div className="hidden flex-wrap gap-3 sm:flex xl:justify-end">
+                {(["open", "cleaning"] as BedStatus[]).map((status) => (
+                  <div key={status} className="flex items-center gap-1.5">
+                    <span className={`size-3 rounded-sm border ${statusTile[status]}`} />
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                      {statusLabel[status]}
+                    </span>
+                  </div>
+                ))}
+                {triageOptions.map((triage) => (
+                  <div key={triage} className="flex items-center gap-1.5">
+                    <span className={`size-3 rounded-sm border ${triageBedTile[triage]}`} />
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                      {triageLabel[triage]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </header>
 
-        <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
-          <aside className="order-2 flex min-w-0 flex-col gap-2 border-t border-border py-2 xl:order-1">
-            <button
-              type="button"
-              onClick={() => setIncomingExpanded((open) => !open)}
-              aria-expanded={incomingExpanded}
-              className="flex min-h-11 items-center justify-between border-b border-border text-left text-sm font-bold"
-            >
-              <span>Incoming ({incomingQueue.length})</span>
-              <span className="xl:hidden">{incomingExpanded ? "−" : "+"}</span>
-            </button>
-            {newPatientMessage && (
-              <p className="rounded-sm border border-signal/60 bg-signal/10 px-2 py-1 text-[11px] font-semibold text-foreground">
-                {newPatientMessage}
-              </p>
-            )}
-            <Dialog
-              open={addingPatient}
-              onOpenChange={(open) => {
-                if (!open) cancelNewPatient();
-              }}
-            >
-              <DialogContent className="board-modal">
-                <DialogTitle>New Patient</DialogTitle>
-                <DialogDescription className="sr-only">
-                  Patient arrival and assignment
-                </DialogDescription>
-                {newPatientMessage && <p role="alert">{newPatientMessage}</p>}
-                <form onSubmit={addIncomingPatient} className="editor-form flex flex-col gap-3">
-                  <label>
-                    Race #
-                    <input
-                      value={newPatientBib}
-                      onChange={(e) => setNewPatientBib(e.target.value)}
-                      placeholder="Race #"
-                      className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                      required
-                    />
-                  </label>
-                  <ComplaintField
-                    choice={newPatientComplaintChoice}
-                    other={newPatientOtherComplaint}
-                    onChoiceChange={setNewPatientComplaintChoice}
-                    onOtherChange={setNewPatientOtherComplaint}
-                  />
-                  <label>
-                    Assign Pod
-                    <select
-                      value={newPatientAssignPod}
-                      onChange={(e) => setNewPatientAssignPod(e.target.value)}
-                      className="mt-1 w-full rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                    >
-                      <option value="">Incoming queue</option>
-                      {pods.map((pod) => {
-                        const open = pod.closed
-                          ? 0
-                          : pod.beds.filter((bed) => bed.status === "open").length;
-                        return (
-                          <option key={pod.id} value={pod.id} disabled={pod.closed || open === 0}>
-                            {pod.name} {pod.closed ? "(closed)" : `(${open} open)`}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </label>
-                  <label>
-                    Triage
-                    <select
-                      value={newPatientTriage}
-                      onChange={(e) => setNewPatientTriage(e.target.value as Triage)}
-                      aria-label="Triage"
-                      className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                    >
-                      {triageOptions.map((triage) => (
-                        <option key={triage} value={triage}>
-                          {triageLabel[triage]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Notes
-                    <input
-                      value={newPatientStatus}
-                      onChange={(e) => setNewPatientStatus(e.target.value)}
-                      placeholder="Notes"
-                      className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                    />
-                  </label>
-                  <label>
-                    Source
-                    <input
-                      value={newPatientSource}
-                      onChange={(e) => setNewPatientSource(e.target.value)}
-                      placeholder="Source"
-                      className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                    />
-                  </label>
-                  <label>
-                    ETA
-                    <input
-                      value={newPatientEta}
-                      onChange={(e) => setNewPatientEta(e.target.value)}
-                      placeholder="ETA"
-                      className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                    />
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="submit"
-                      className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
-                    >
-                      Add
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelNewPatient}
-                      className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-            <div className={`flex-col gap-2 ${incomingExpanded ? "flex" : "hidden xl:flex"}`}>
-              {incomingQueue.length === 0 && (
-                <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Incoming queue clear
+          <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
+            <aside className="order-2 flex min-w-0 flex-col gap-2 border-t border-border py-2 xl:order-1">
+              <button
+                type="button"
+                onClick={() => setIncomingExpanded((open) => !open)}
+                aria-expanded={incomingExpanded}
+                className="flex min-h-11 items-center justify-between border-b border-border text-left text-sm font-bold"
+              >
+                <span>Incoming ({incomingQueue.length})</span>
+                <span className="xl:hidden">{incomingExpanded ? "−" : "+"}</span>
+              </button>
+              {newPatientMessage && (
+                <p className="rounded-sm border border-signal/60 bg-signal/10 px-2 py-1 text-[11px] font-semibold text-foreground">
+                  {newPatientMessage}
                 </p>
               )}
-              {incomingQueue.map((patient) => (
-                <IncomingCard
-                  key={patient.id}
-                  patient={patient}
-                  disabled={setup}
-                  onEdit={() => startIncomingEdit(patient)}
-                />
-              ))}
-            </div>
-          </aside>
-
-          <section className="order-1 flex min-w-0 flex-col gap-3 xl:order-2">
-            {setup && (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-signal bg-card p-3">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Add pods
-                </span>
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Name (e.g. Pod G - Wound Care)"
-                  className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                />
-                <input
-                  value={newZone}
-                  onChange={(e) => setNewZone(e.target.value)}
-                  placeholder="Zone / location"
-                  className="w-44 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                />
-                <input
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Operational note"
-                  className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                />
-                <input
-                  value={newCapabilities}
-                  onChange={(e) => setNewCapabilities(e.target.value)}
-                  placeholder="Capabilities"
-                  className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
-                  value={newPodCount}
-                  onChange={(e) => setNewPodCount(e.target.value)}
-                  aria-label="Number of pods"
-                  className="w-20 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                />
-                <input
-                  type="color"
-                  value={newColor}
-                  onChange={(e) => setNewColor(e.target.value)}
-                  title="Pod color"
-                  className="size-8 rounded-sm border border-border bg-background p-1"
-                />
-                <PodColorPresets value={newColor} onChange={setNewColor} />
-                <label className="flex items-center gap-2 text-xs">
-                  Beds per pod
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={newBedCount}
-                    onChange={(e) => setNewBedCount(e.target.value)}
-                    className="min-h-11 w-16 rounded-sm border border-border bg-background px-2"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={addPod}
-                  className="rounded-sm border border-signal bg-signal px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
-                >
-                  Add pod
-                </button>
-                <span className="w-full text-[10px] text-muted-foreground">
-                  In edit mode, patient movement is paused while the tent layout is adjusted.
-                </span>
-                {layoutMessage && (
-                  <span className="w-full rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
-                    {layoutMessage}
-                  </span>
-                )}
-              </div>
-            )}
-            <div className="pod-grid grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
-              {pods.map((pod) => (
-                <PodCard
-                  key={pod.id}
-                  pod={pod}
-                  selected={selectedPod === pod.id}
-                  setup={setup}
-                  onSelect={() => setSelectedPod(selectedPod === pod.id ? null : pod.id)}
-                  onEdit={() => setEditingPod(pod.id)}
-                  onEditPatient={startPatientEdit}
-                />
-              ))}
-            </div>
-            {editingPod && pods.find((pod) => pod.id === editingPod) && (
-              <PodEditor
-                key={editingPod}
-                pod={pods.find((pod) => pod.id === editingPod)!}
-                onClose={() => setEditingPod(null)}
-                onRemove={() => removePod(editingPod)}
-                onSave={(draft) => {
-                  setPods((previous) =>
-                    previous.map((pod) =>
-                      pod.id === draft.id ? { ...draft, beds: pod.beds } : pod,
-                    ),
-                  );
-                  setEditingPod(null);
+              <Dialog
+                open={addingPatient}
+                onOpenChange={(open) => {
+                  if (!open) cancelNewPatient();
                 }}
-              />
-            )}
-            <Dialog
-              open={!!editPatient}
-              onOpenChange={(open) => {
-                if (!open) cancelPatientEdit();
-              }}
-            >
-              <DialogContent className="board-modal">
-                <DialogTitle>Edit Patient</DialogTitle>
-                <DialogDescription className="sr-only">
-                  Patient information and pod assignment
-                </DialogDescription>
-                {editPatient && (
-                  <form onSubmit={savePatientEdit} className="editor-form grid gap-3">
+              >
+                <DialogContent className="board-modal">
+                  <DialogTitle>New Patient</DialogTitle>
+                  <DialogDescription className="sr-only">
+                    Patient arrival and assignment
+                  </DialogDescription>
+                  {newPatientMessage && <p role="alert">{newPatientMessage}</p>}
+                  <form onSubmit={addIncomingPatient} className="editor-form flex flex-col gap-3">
                     <label>
                       Race #
                       <input
-                        value={editPatientBib}
-                        onChange={(e) => setEditPatientBib(e.target.value)}
+                        value={newPatientBib}
+                        onChange={(e) => setNewPatientBib(e.target.value)}
                         placeholder="Race #"
                         className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
                         required
                       />
                     </label>
+                    <ComplaintField
+                      choice={newPatientComplaintChoice}
+                      other={newPatientOtherComplaint}
+                      onChoiceChange={setNewPatientComplaintChoice}
+                      onOtherChange={setNewPatientOtherComplaint}
+                    />
+                    <label>
+                      Assign Pod
+                      <select
+                        value={newPatientAssignPod}
+                        onChange={(e) => setNewPatientAssignPod(e.target.value)}
+                        className="mt-1 w-full rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                      >
+                        <option value="">Incoming queue</option>
+                        {pods.map((pod) => {
+                          const open = pod.closed
+                            ? 0
+                            : pod.beds.filter((bed) => bed.status === "open").length;
+                          return (
+                            <option key={pod.id} value={pod.id} disabled={pod.closed || open === 0}>
+                              {pod.name} {pod.closed ? "(closed)" : `(${open} open)`}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
                     <label>
                       Triage
                       <select
-                        value={editPatientTriage}
-                        onChange={(e) => setEditPatientTriage(e.target.value as Triage)}
+                        value={newPatientTriage}
+                        onChange={(e) => setNewPatientTriage(e.target.value as Triage)}
                         aria-label="Triage"
-                        className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                        className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
                       >
                         {triageOptions.map((triage) => (
                           <option key={triage} value={triage}>
@@ -1780,100 +1660,376 @@ export function TentBoard() {
                         ))}
                       </select>
                     </label>
-                    <ComplaintField
-                      choice={editPatientComplaintChoice}
-                      other={editPatientOtherComplaint}
-                      onChoiceChange={setEditPatientComplaintChoice}
-                      onOtherChange={setEditPatientOtherComplaint}
-                    />
                     <label>
                       Notes
                       <input
-                        value={editPatientStatus}
-                        onChange={(e) => setEditPatientStatus(e.target.value)}
+                        value={newPatientStatus}
+                        onChange={(e) => setNewPatientStatus(e.target.value)}
                         placeholder="Notes"
+                        className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                      />
+                    </label>
+                    <label>
+                      Source
+                      <input
+                        value={newPatientSource}
+                        onChange={(e) => setNewPatientSource(e.target.value)}
+                        placeholder="Source"
                         className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
                       />
                     </label>
                     <label>
-                      Assign Pod
-                      <select
-                        value={editPatientPod}
-                        onChange={(e) => setEditPatientPod(e.target.value)}
-                        aria-label="Move to pod"
-                        className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                      >
-                        {editPatient.kind === "incoming" && (
-                          <option value="">Incoming queue</option>
-                        )}
-                        {pods.map((pod) => {
-                          const open = pod.closed
-                            ? 0
-                            : pod.beds.filter((bed) => bed.status === "open").length;
-                          const current =
-                            editPatient.kind === "bed" && editPatient.podId === pod.id;
-                          return (
-                            <option
-                              key={pod.id}
-                              value={pod.id}
-                              disabled={!current && (pod.closed || open === 0)}
-                            >
-                              {pod.name}{" "}
-                              {current ? "(current)" : pod.closed ? "(closed)" : `(${open} open)`}
-                            </option>
-                          );
-                        })}
-                      </select>
+                      ETA
+                      <input
+                        value={newPatientEta}
+                        onChange={(e) => setNewPatientEta(e.target.value)}
+                        placeholder="ETA"
+                        className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                      />
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="submit"
                         className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
                       >
-                        Save
+                        Add
                       </button>
                       <button
                         type="button"
-                        onClick={cancelPatientEdit}
+                        onClick={cancelNewPatient}
                         className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
                       >
                         Cancel
                       </button>
                     </div>
-                    {editPatientMessage && (
-                      <p className="rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
-                        {editPatientMessage}
-                      </p>
-                    )}
                   </form>
+                </DialogContent>
+              </Dialog>
+              <div className={`flex-col gap-2 ${incomingExpanded ? "flex" : "hidden xl:flex"}`}>
+                {incomingQueue.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    Incoming queue clear
+                  </p>
                 )}
-              </DialogContent>
-            </Dialog>
-            {selected && !setup && !editPatient && !editingPod ? (
-              <PodDetail
-                pod={selected}
-                onClose={() => setSelectedPod(null)}
-                onClearBed={(bedId) => clearTurnoverBed(selected.id, bedId)}
-                onEditPatient={startPatientEdit}
-              />
-            ) : null}
-          </section>
+                {incomingQueue.map((patient) => (
+                  <IncomingCard
+                    key={patient.id}
+                    patient={patient}
+                    disabled={setup}
+                    onEdit={() => startIncomingEdit(patient)}
+                  />
+                ))}
+              </div>
+            </aside>
 
-          <aside className="order-3 grid min-w-0 grid-cols-3 content-start gap-2 border-t border-border py-2 xl:flex xl:flex-col">
-            <h2 className="col-span-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Disposition
-            </h2>
-            {dispositionCounts.map((category) => (
-              <DispositionBucket
-                key={category.id}
-                category={category}
-                dispositions={category.dispositions}
-                disabled={setup}
-              />
-            ))}
-          </aside>
-        </main>
-      </div>
-    </PatientMovement>
+            <section className="order-1 flex min-w-0 flex-col gap-3 xl:order-2">
+              {setup && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-signal bg-card p-3">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Add pods
+                  </span>
+                  <input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="Name (e.g. Pod G - Wound Care)"
+                    className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                  />
+                  <input
+                    value={newZone}
+                    onChange={(e) => setNewZone(e.target.value)}
+                    placeholder="Zone / location"
+                    className="w-44 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                  />
+                  <input
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    placeholder="Operational note"
+                    className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                  />
+                  <input
+                    value={newCapabilities}
+                    onChange={(e) => setNewCapabilities(e.target.value)}
+                    placeholder="Capabilities"
+                    className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={newPodCount}
+                    onChange={(e) => setNewPodCount(e.target.value)}
+                    aria-label="Number of pods"
+                    className="w-20 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                  />
+                  <input
+                    type="color"
+                    value={newColor}
+                    onChange={(e) => setNewColor(e.target.value)}
+                    title="Pod color"
+                    className="size-8 rounded-sm border border-border bg-background p-1"
+                  />
+                  <PodColorPresets value={newColor} onChange={setNewColor} />
+                  <label className="flex items-center gap-2 text-xs">
+                    Beds per pod
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={newBedCount}
+                      onChange={(e) => setNewBedCount(e.target.value)}
+                      className="min-h-11 w-16 rounded-sm border border-border bg-background px-2"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={addPod}
+                    className="rounded-sm border border-signal bg-signal px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                  >
+                    Add pod
+                  </button>
+                  <span className="w-full text-[10px] text-muted-foreground">
+                    In edit mode, patient movement is paused while the tent layout is adjusted.
+                  </span>
+                  {layoutMessage && (
+                    <span className="w-full rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
+                      {layoutMessage}
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="pod-grid grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
+                {pods.map((pod) => (
+                  <PodCard
+                    key={pod.id}
+                    pod={pod}
+                    selected={selectedPod === pod.id}
+                    setup={setup}
+                    onSelect={() => setSelectedPod(selectedPod === pod.id ? null : pod.id)}
+                    onEdit={() => setEditingPod(pod.id)}
+                    onEditPatient={startPatientEdit}
+                  />
+                ))}
+              </div>
+              {editingPod && pods.find((pod) => pod.id === editingPod) && (
+                <PodEditor
+                  key={editingPod}
+                  pod={pods.find((pod) => pod.id === editingPod)!}
+                  onClose={() => setEditingPod(null)}
+                  onRemove={() => removePod(editingPod)}
+                  onSave={(draft) => {
+                    setPods((previous) =>
+                      previous.map((pod) =>
+                        pod.id === draft.id ? { ...draft, beds: pod.beds } : pod,
+                      ),
+                    );
+                    setEditingPod(null);
+                  }}
+                />
+              )}
+              <Dialog
+                open={!!editPatient}
+                onOpenChange={(open) => {
+                  if (!open) cancelPatientEdit();
+                }}
+              >
+                <DialogContent className="board-modal">
+                  <DialogTitle>Edit Patient</DialogTitle>
+                  <DialogDescription className="sr-only">
+                    Patient information and pod assignment
+                  </DialogDescription>
+                  {editPatient && (
+                    <form onSubmit={savePatientEdit} className="editor-form grid gap-3">
+                      <label>
+                        Race #
+                        <input
+                          value={editPatientBib}
+                          onChange={(e) => setEditPatientBib(e.target.value)}
+                          placeholder="Race #"
+                          className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                          required
+                        />
+                      </label>
+                      <label>
+                        Triage
+                        <select
+                          value={editPatientTriage}
+                          onChange={(e) => setEditPatientTriage(e.target.value as Triage)}
+                          aria-label="Triage"
+                          className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                        >
+                          {triageOptions.map((triage) => (
+                            <option key={triage} value={triage}>
+                              {triageLabel[triage]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <ComplaintField
+                        choice={editPatientComplaintChoice}
+                        other={editPatientOtherComplaint}
+                        onChoiceChange={setEditPatientComplaintChoice}
+                        onOtherChange={setEditPatientOtherComplaint}
+                      />
+                      <label>
+                        Notes
+                        <input
+                          value={editPatientStatus}
+                          onChange={(e) => setEditPatientStatus(e.target.value)}
+                          placeholder="Notes"
+                          className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                        />
+                      </label>
+                      <label>
+                        Assign Pod
+                        <select
+                          value={editPatientPod}
+                          onChange={(e) => setEditPatientPod(e.target.value)}
+                          aria-label="Move to pod"
+                          className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                        >
+                          {editPatient.kind === "incoming" && (
+                            <option value="">Incoming queue</option>
+                          )}
+                          {pods.map((pod) => {
+                            const open = pod.closed
+                              ? 0
+                              : pod.beds.filter((bed) => bed.status === "open").length;
+                            const current =
+                              editPatient.kind === "bed" && editPatient.podId === pod.id;
+                            return (
+                              <option
+                                key={pod.id}
+                                value={pod.id}
+                                disabled={!current && (pod.closed || open === 0)}
+                              >
+                                {pod.name}{" "}
+                                {current ? "(current)" : pod.closed ? "(closed)" : `(${open} open)`}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="submit"
+                          className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelPatientEdit}
+                          className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {editPatientMessage && (
+                        <p className="rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
+                          {editPatientMessage}
+                        </p>
+                      )}
+                    </form>
+                  )}
+                </DialogContent>
+              </Dialog>
+              {selected && !setup && !editPatient && !editingPod && !pendingDisposition ? (
+                <PodDetail
+                  pod={selected}
+                  onClose={() => setSelectedPod(null)}
+                  onClearBed={(bedId) => clearTurnoverBed(selected.id, bedId)}
+                  onEditPatient={startPatientEdit}
+                />
+              ) : null}
+            </section>
+
+            <aside className="order-3 grid min-w-0 grid-cols-3 content-start gap-2 border-t border-border py-2 xl:flex xl:flex-col">
+              <h2 className="col-span-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                Disposition
+              </h2>
+              {dispositionCounts.map((category) => (
+                <DispositionBucket
+                  key={category.id}
+                  category={category}
+                  dispositions={category.dispositions}
+                  disabled={setup}
+                />
+              ))}
+            </aside>
+          </main>
+        </div>
+        {pendingDisposition && (
+          <Dialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setPendingDisposition(null);
+            }}
+          >
+            <DialogContent className="board-modal">
+              <DialogTitle>Confirm disposition</DialogTitle>
+              <DialogDescription>
+                Race #{pendingDisposition.bib}:{" "}
+                {
+                  dispositionCategories.find(
+                    (category) => category.id === pendingDisposition.category,
+                  )?.label
+                }
+                .
+                {pendingDisposition.ref.kind === "bed"
+                  ? " The bed will be marked Cleaning."
+                  : " The patient will leave Incoming."}
+              </DialogDescription>
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (pendingDisposition.category === "other" && !dispositionDescription.trim())
+                    return;
+                  handleDispositionDrop(
+                    pendingDisposition.category,
+                    pendingDisposition.ref,
+                    pendingDisposition.category === "other"
+                      ? dispositionDescription.trim()
+                      : undefined,
+                  );
+                  setPendingDisposition(null);
+                }}
+              >
+                {pendingDisposition.category === "other" && (
+                  <label className="flex flex-col gap-2 text-sm">
+                    Other disposition description
+                    <textarea
+                      autoFocus
+                      required
+                      value={dispositionDescription}
+                      onChange={(event) => setDispositionDescription(event.target.value)}
+                      className="min-h-24 w-full rounded-sm border border-border bg-background p-2"
+                    />
+                  </label>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="min-h-11 rounded-sm border border-border px-3"
+                    onClick={() => setPendingDisposition(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      pendingDisposition.category === "other" && !dispositionDescription.trim()
+                    }
+                    className="min-h-11 rounded-sm bg-signal px-3 font-semibold text-background disabled:opacity-50"
+                  >
+                    Confirm disposition
+                  </button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </PatientMovement>
+    </DispositionActionContext.Provider>
   );
 }

@@ -65,6 +65,8 @@ test.beforeEach(async ({ page }) => {
     if (message.type() === "error") throw new Error(message.text());
   });
   await page.addInitScript((pods) => {
+    if (sessionStorage.getItem("board-test-seeded")) return;
+    sessionStorage.setItem("board-test-seeded", "true");
     localStorage.setItem("tent-board-pods-v3", JSON.stringify(pods));
     localStorage.setItem(
       "tent-board-incoming-v1",
@@ -231,6 +233,34 @@ test("incoming long press assigns to an open bed", async ({ page, isMobile }) =>
     await page.evaluate(() => JSON.parse(localStorage.getItem("tent-board-incoming-v1")!)),
   ).toEqual([]);
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("patient disposition menu confirms, saves Other description, and preserves turnover", async ({
+  page,
+  isMobile,
+}) => {
+  await page
+    .getByRole("combobox", { name: "Disposition patient A100", exact: true })
+    .selectOption("discharged");
+  await expect(page.getByRole("dialog", { name: "Confirm disposition" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect((await savedPods(page))[0].beds[0].bib).toBe("A100");
+  await page.getByRole("button", { name: /^Pod A 1\/4/ }).click();
+  const pod = page.getByRole("dialog", { name: "Pod A", exact: true });
+  await pod.getByRole("combobox", { name: "Disposition patient A100" }).selectOption("other");
+  const confirmation = page.getByRole("dialog", { name: "Confirm disposition" });
+  await expect(confirmation.getByRole("button", { name: "Confirm disposition" })).toBeDisabled();
+  await confirmation.getByLabel("Other disposition description").fill("Left with family");
+  await confirmation.getByRole("button", { name: "Confirm disposition" }).click();
+  await expect(pod).toBeVisible();
+  await expect.poll(async () => (await savedPods(page))[0].beds[0].status).toBe("cleaning");
+  await page.keyboard.press("Escape");
+  await page.reload();
+  const otherBucket = page.getByRole("button", { name: "Other 1", exact: true });
+  await otherBucket.scrollIntoViewIfNeeded();
+  if (isMobile) await otherBucket.tap();
+  else await otherBucket.click();
+  await expect(page.getByText("Left with family", { exact: true })).toBeVisible();
 });
 
 test("disposition drop preserves cleaning and ready workflow", async ({ page, isMobile }) => {

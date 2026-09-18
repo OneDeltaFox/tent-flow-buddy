@@ -39,6 +39,7 @@ export type Incoming = {
 export type DispositionCategory = "discharged" | "ems" | "other";
 
 export type Disposition = {
+  description?: string | undefined;
   id: string;
   bib: string;
   category: DispositionCategory;
