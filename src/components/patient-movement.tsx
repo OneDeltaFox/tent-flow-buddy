@@ -99,6 +99,8 @@ export function PatientSurface({
       {...attributes}
       {...listeners}
       role={onEdit ? "button" : undefined}
+      aria-disabled={!onEdit}
+      aria-roledescription={source ? "draggable" : undefined}
       tabIndex={onEdit ? 0 : -1}
       aria-label={bib ? `Edit patient ${bib}` : undefined}
       onPointerDown={(event) => {

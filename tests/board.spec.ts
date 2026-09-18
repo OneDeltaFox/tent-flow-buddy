@@ -97,6 +97,36 @@ test("patient modal saves and protects unsaved changes", async ({ page }) => {
   expect((await savedPods(page))[0].beds[0].bib).toBe("A100");
 });
 
+test("pod details open above the board and return after patient editing", async ({
+  page,
+}, testInfo) => {
+  const grid = page.locator(".pod-grid");
+  const before = await grid.boundingBox();
+  await page.getByRole("button", { name: /^Pod A 1\/4/ }).click();
+  const details = page.getByRole("dialog", { name: "Pod A", exact: true });
+  await expect(details).toBeVisible();
+  await expect(details.getByText("Cooling", { exact: true })).toBeVisible();
+  await expect(
+    details.getByRole("button", { name: "Edit patient A100", exact: true }),
+  ).toBeVisible();
+  await expect(details.locator(".cursor-grab")).toHaveCount(0);
+  expect((await grid.boundingBox())?.height).toBe(before?.height);
+  const box = (await details.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  await page.screenshot({ path: testInfo.outputPath("pod-popup.png"), animations: "disabled" });
+  await details.getByRole("button", { name: "Edit patient A100", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit Patient", exact: true });
+  await expect(editor).toBeVisible();
+  await editor.getByLabel("Notes").fill("Resting");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(details).toBeVisible();
+  await expect(details.getByText("Resting", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect((await grid.boundingBox())?.height).toBe(before?.height);
+});
+
 test("pod modal uses a draft and preserves active patients", async ({ page }) => {
   await page.getByRole("button", { name: "Edit Pod A", exact: true }).click();
   const modal = page.getByRole("dialog", { name: "Edit pod", exact: true });

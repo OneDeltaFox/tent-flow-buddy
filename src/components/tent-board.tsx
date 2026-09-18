@@ -686,94 +686,93 @@ function PodDetail({
   const cleaningBeds = pod.beds.filter((bed) => bed.status === "cleaning");
 
   return (
-    <section
-      style={{ borderLeftColor: pod.color, borderLeftWidth: 5 }}
-      className="flex flex-col gap-3 rounded-lg border border-signal bg-card p-4"
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold tracking-tight">{pod.name}</h2>
-          <p className="text-[11px] text-muted-foreground">
-            {pod.zone} - {pod.closed ? "closed to new assignments" : `${open} open beds`}
-          </p>
-          {pod.note && <p className="mt-1 text-[11px] font-semibold text-signal">{pod.note}</p>}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 rounded-sm border border-border px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
-        >
-          Close
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-4 border-y border-border py-2 font-mono">
-        <div>
-          <div className="text-[9px] font-bold uppercase text-muted-foreground">Open beds</div>
-          <div className="text-xl font-extrabold text-status-open">
-            {open}
-            <span className="text-sm text-muted-foreground"> / {total}</span>
-          </div>
-        </div>
-        {pod.closed && (
-          <div>
-            <div className="text-[9px] font-bold uppercase text-muted-foreground">Pod status</div>
-            <div className="text-xs font-bold uppercase tracking-widest text-status-critical">
-              Closed
-            </div>
-          </div>
-        )}
-        <div className="min-w-0">
-          <div className="text-[9px] font-bold uppercase text-muted-foreground">Capabilities</div>
-          <div className="text-xs font-medium text-foreground">
-            {pod.capabilities.length > 0 ? pod.capabilities.join(", ") : "-"}
-          </div>
-        </div>
-        {openBeds.length > 0 && (
+      <DialogContent
+        style={{ borderLeftColor: pod.color, borderLeftWidth: 5 }}
+        className="board-modal flex flex-col gap-3"
+      >
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
           <div className="min-w-0">
+            <DialogTitle className="break-words pr-10">{pod.name}</DialogTitle>
+            <DialogDescription className="mt-2 text-[11px] text-muted-foreground">
+              {pod.zone} - {pod.closed ? "closed to new assignments" : `${open} open beds`}
+            </DialogDescription>
+            {pod.note && <p className="mt-1 text-[11px] font-semibold text-signal">{pod.note}</p>}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-4 border-y border-border py-2 font-mono">
+          <div>
             <div className="text-[9px] font-bold uppercase text-muted-foreground">Open beds</div>
-            <div className="mt-1 flex gap-1.5">
-              {openBeds.map((bed) => (
-                <BedTile key={bed.id} bed={bed} podId={pod.id} className="w-11" />
-              ))}
+            <div className="text-xl font-extrabold text-status-open">
+              {open}
+              <span className="text-sm text-muted-foreground"> / {total}</span>
             </div>
           </div>
-        )}
-      </div>
+          {pod.closed && (
+            <div>
+              <div className="text-[9px] font-bold uppercase text-muted-foreground">Pod status</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-status-critical">
+                Closed
+              </div>
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="text-[9px] font-bold uppercase text-muted-foreground">Capabilities</div>
+            <div className="text-xs font-medium text-foreground">
+              {pod.capabilities.length > 0 ? pod.capabilities.join(", ") : "-"}
+            </div>
+          </div>
+          {openBeds.length > 0 && (
+            <div className="min-w-0">
+              <div className="text-[9px] font-bold uppercase text-muted-foreground">Open beds</div>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {openBeds.map((bed) => (
+                  <BedTile key={bed.id} bed={bed} podId={pod.id} disabled className="w-11" />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        {patients.length === 0 && (
-          <p className="text-xs text-muted-foreground">No patients currently in this pod.</p>
-        )}
-        {patients.map((bed) => (
-          <PatientCard
-            key={bed.id}
-            patient={patientFromBed(bed)}
-            locationLabel={`${bed.label} - in ${bed.since ?? "--:--"}`}
-            onEdit={() => onEditPatient(pod.id, bed)}
-            source={{ kind: "bed", podId: pod.id, bedId: bed.id }}
-          />
-        ))}
-      </div>
-
-      {cleaningBeds.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Turnover
-          </span>
-          {cleaningBeds.map((bed) => (
-            <button
+        <div className="flex flex-col gap-1.5">
+          {patients.length === 0 && (
+            <p className="text-xs text-muted-foreground">No patients currently in this pod.</p>
+          )}
+          {patients.map((bed) => (
+            <PatientCard
               key={bed.id}
-              type="button"
-              onClick={() => onClearBed(bed.id)}
-              className="rounded-sm border border-border px-2 py-1 font-mono text-[10px] font-bold uppercase text-muted-foreground hover:border-status-open hover:text-status-open"
-            >
-              {bed.label} ready
-            </button>
+              patient={patientFromBed(bed)}
+              locationLabel={`${bed.label} - in ${bed.since ?? "--:--"}`}
+              onEdit={() => onEditPatient(pod.id, bed)}
+            />
           ))}
         </div>
-      )}
-    </section>
+
+        {cleaningBeds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Turnover
+            </span>
+            {cleaningBeds.map((bed) => (
+              <button
+                key={bed.id}
+                type="button"
+                onClick={() => onClearBed(bed.id)}
+                className="rounded-sm border border-border px-2 py-1 font-mono text-[10px] font-bold uppercase text-muted-foreground hover:border-status-open hover:text-status-open"
+              >
+                {bed.label} ready
+              </button>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -937,7 +936,6 @@ export function TentBoard() {
     const baseName = newName.trim();
     const capabilities = parseCapabilities(newCapabilities);
     const nextPods = [...pods];
-    const addedPods: Pod[] = [];
 
     for (let i = 0; i < count; i += 1) {
       const id = nextPodId(nextPods);
@@ -954,7 +952,6 @@ export function TentBoard() {
       );
       pod.capabilities = capabilities;
       nextPods.push(pod);
-      addedPods.push(pod);
     }
 
     setPods(nextPods);
@@ -965,7 +962,6 @@ export function TentBoard() {
     setNewCapabilities("");
     setNewPodCount("1");
     setNewColor(podColorOptions[nextPods.length % podColorOptions.length]);
-    if (addedPods[0]) setSelectedPod(addedPods[0].id);
   };
 
   const resetPatientForm = () => {
@@ -1022,7 +1018,7 @@ export function TentBoard() {
             ),
           })),
         );
-        setSelectedPod(targetPod.id);
+
         resetPatientForm();
         setAddingPatient(false);
         return;
@@ -1191,7 +1187,7 @@ export function TentBoard() {
         })),
       );
       setIncomingQueue((prev) => prev.filter((patient) => patient.id !== editPatient.incomingId));
-      setSelectedPod(targetPod.id);
+
       finishPatientEdit();
       return;
     }
@@ -1237,7 +1233,7 @@ export function TentBoard() {
           }),
         })),
       );
-      setSelectedPod(targetPod.id);
+
       finishPatientEdit();
       return;
     }
@@ -1315,7 +1311,7 @@ export function TentBoard() {
         })),
       );
       setIncomingQueue((prev) => prev.filter((item) => item.id !== ref.incomingId));
-      setSelectedPod(targetPodId);
+
       return;
     }
 
@@ -1347,7 +1343,6 @@ export function TentBoard() {
         }),
       })),
     );
-    setSelectedPod(targetPodId);
   };
 
   const handleDispositionDrop = (category: DispositionCategory, ref: PatientRef) => {
@@ -1408,7 +1403,7 @@ export function TentBoard() {
   return (
     <PatientMovement
       onMove={(source, target) => {
-        if (setup || editPatient || editingPod || addingPatient) return;
+        if (setup || selectedPod || editPatient || editingPod || addingPatient) return;
         if (target.kind === "bed") handleBedDrop(target.podId, target.bedId, source);
         else handleDispositionDrop(target.category, source);
       }}
@@ -1854,7 +1849,7 @@ export function TentBoard() {
                 )}
               </DialogContent>
             </Dialog>
-            {selected && !setup ? (
+            {selected && !setup && !editPatient && !editingPod ? (
               <PodDetail
                 pod={selected}
                 onClose={() => setSelectedPod(null)}
