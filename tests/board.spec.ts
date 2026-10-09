@@ -336,6 +336,9 @@ test("patient disposition menu confirms, saves Other description, and preserves 
 });
 
 test("disposition drop preserves cleaning and ready workflow", async ({ page, isMobile }) => {
+  // Keep both endpoints visible; the separate edge-scroll test covers offscreen drops.
+  if (isMobile) await page.setViewportSize({ width: 393, height: 1800 });
+  await expect(page.locator('[data-drop-target*="discharged"]')).toBeInViewport();
   await drag(
     page,
     page.getByRole("button", { name: "Edit patient A100", exact: true }),
