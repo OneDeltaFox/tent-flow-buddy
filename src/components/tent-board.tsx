@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { Pencil, Settings, Trash2, X } from "lucide-react";
+import { Monitor, Pencil, Settings, Trash2, X } from "lucide-react";
+import { StatusBoard } from "@/components/status-board";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PatientMovement, PatientSurface, PatientDropTarget } from "@/components/patient-movement";
 import type { PatientRef } from "@/components/patient-movement";
@@ -261,6 +262,7 @@ function clearBed(bed: Bed, status: BedStatus): Bed {
     status,
     bib: undefined,
     since: undefined,
+    arrivedAt: undefined,
     triage: undefined,
     complaint: undefined,
     operationalStatus: undefined,
@@ -906,6 +908,7 @@ export function TentBoard() {
   const [dispositionDescription, setDispositionDescription] = useState("");
   const [eventName, setEventName] = useState(DEFAULT_EVENT_NAME);
   const [currentClock, setCurrentClock] = useState("--:--");
+  const [statusView, setStatusView] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [newName, setNewName] = useState("Pod");
   const [addingPods, setAddingPods] = useState(false);
@@ -1124,6 +1127,7 @@ export function TentBoard() {
                     status: "occupied",
                     bib: patient.bib,
                     since: formatBoardTime(),
+                    arrivedAt: Date.now(),
                     triage: patient.triage,
                     complaint: patient.complaint,
                     operationalStatus: patient.operationalStatus,
@@ -1292,6 +1296,7 @@ export function TentBoard() {
                   status: "occupied",
                   bib: incomingUpdate.bib,
                   since: formatBoardTime(),
+                  arrivedAt: Date.now(),
                   triage: incomingUpdate.triage,
                   complaint: incomingUpdate.complaint,
                   operationalStatus: incomingUpdate.operationalStatus,
@@ -1340,6 +1345,7 @@ export function TentBoard() {
                 ...bed,
                 status: "occupied",
                 since: currentBed.since ?? formatBoardTime(),
+                arrivedAt: currentBed.arrivedAt,
                 ...bedUpdate,
               };
             }
@@ -1416,6 +1422,7 @@ export function TentBoard() {
                   status: "occupied",
                   bib: patient.bib,
                   since: formatBoardTime(),
+                  arrivedAt: Date.now(),
                   triage: patient.triage,
                   complaint: patient.complaint,
                   operationalStatus: patient.operationalStatus,
@@ -1448,6 +1455,7 @@ export function TentBoard() {
               status: "occupied",
               bib: sourceBed.bib,
               since: sourceBed.since,
+              arrivedAt: sourceBed.arrivedAt,
               triage: sourceBed.triage,
               complaint: sourceBed.complaint,
               operationalStatus: sourceBed.operationalStatus,
@@ -1524,6 +1532,17 @@ export function TentBoard() {
     { label: "Seen today", value: totals.seenToday, tone: "text-foreground" },
   ];
 
+  if (statusView)
+    return (
+      <StatusBoard
+        pods={pods}
+        eventName={eventName}
+        incomingCount={incomingQueue.length}
+        bedTone={bedTileTone}
+        onClose={() => setStatusView(false)}
+      />
+    );
+
   return (
     <DispositionActionContext.Provider
       value={(ref, bib, category) => {
@@ -1584,6 +1603,13 @@ export function TentBoard() {
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
+              <button
+                type="button"
+                onClick={() => setStatusView(true)}
+                className="flex min-h-11 items-center gap-2 rounded-sm border border-border px-3 text-sm"
+              >
+                <Monitor size={16} /> Status Board
+              </button>
               <button
                 type="button"
                 onClick={() => setAddingPatient(true)}

@@ -8,6 +8,7 @@ export type Bed = {
   status: BedStatus;
   bib?: string | undefined;
   since?: string | undefined;
+  arrivedAt?: number | undefined;
   triage?: Triage | undefined;
   complaint?: string | undefined;
   operationalStatus?: string | undefined;

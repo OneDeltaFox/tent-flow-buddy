@@ -171,6 +171,36 @@ test("batch pods preserve the board and support separate pool numbering", async 
   expect(saved.slice(-4).every((pod: { beds: unknown[] }) => pod.beds.length === 1)).toBe(true);
 });
 
+test("status board is read only and arrival timers survive moves and reload", async ({
+  page,
+}, testInfo) => {
+  await page.getByRole("button", { name: "Incoming (1)", exact: false }).click();
+  await page.getByRole("button", { name: "Edit patient 9900", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit Patient", exact: true });
+  await editor.getByLabel("Move to pod").selectOption("B");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  const arrival = (await savedPods(page))[1].beds[0].arrivedAt;
+  expect(arrival).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Status Board", exact: true }).click();
+  const board = page.getByTestId("status-board");
+  await expect(board.getByText("#9900", { exact: true })).toBeVisible();
+  await expect(board.getByText(/^00:00:\d{2}$/)).toBeVisible();
+  await expect(board.getByRole("combobox")).toHaveCount(0);
+  await expect(board.getByRole("button", { name: /Edit patient/ })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath("status-board.png"), animations: "disabled" });
+  await page.getByRole("button", { name: "Back to working board" }).click();
+  await page.getByRole("button", { name: "Edit patient 9900", exact: true }).click();
+  await editor.getByLabel("Move to pod").selectOption("A");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  expect((await savedPods(page))[0].beds[1].arrivedAt).toBe(arrival);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Edit patient 9900", exact: true })).toBeVisible();
+  expect((await savedPods(page))[0].beds[1].arrivedAt).toBe(arrival);
+});
+
 test("pod modal uses a draft and preserves active patients", async ({ page }) => {
   await page.getByRole("button", { name: "Edit Pod A", exact: true }).click();
   const modal = page.getByRole("dialog", { name: "Edit pod", exact: true });
