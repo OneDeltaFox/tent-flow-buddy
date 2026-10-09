@@ -129,6 +129,48 @@ test("pod details open above the board and return after patient editing", async 
   expect((await grid.boundingBox())?.height).toBe(before?.height);
 });
 
+test("batch pods preserve the board and support separate pool numbering", async ({
+  page,
+}, testInfo) => {
+  const original = await savedPods(page);
+  await page.getByText("Board settings", { exact: true }).click();
+  await page.getByRole("button", { name: /Edit layout/i }).click();
+  await page.getByRole("button", { name: "Add Pods", exact: true }).click();
+  const modal = page.getByRole("dialog", { name: "Add Pods", exact: true });
+  await modal.getByLabel("Number of pods").fill("8");
+  await modal.getByLabel("Shared capabilities").fill("Cooling, IV Access, Cooling");
+  await modal.getByRole("button", { name: "Orange pod color", exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("batch-pods.png"), animations: "disabled" });
+  await modal.getByRole("button", { name: "Create & Add Another Batch" }).click();
+  await expect(modal.getByLabel("Starting number")).toHaveValue("13");
+  let saved = await savedPods(page);
+  expect(saved.slice(0, original.length)).toEqual(original);
+  expect(saved.slice(original.length).map((pod: { name: string }) => pod.name)).toEqual(
+    Array.from({ length: 8 }, (_, i) => `Pod ${i + 5}`),
+  );
+  expect(saved[4].capabilities).toEqual(["Cooling", "IV Access"]);
+  expect(saved[4].color).toBe("#f97316");
+  expect(saved[4].beds[0].label).toBe("5-1");
+  await modal.getByLabel("Starting number").fill("5");
+  await modal.getByRole("button", { name: "Create Batch", exact: true }).click();
+  await expect(modal.getByRole("status")).toContainText("already exists");
+  expect((await savedPods(page)).length).toBe(12);
+  await modal.getByLabel("Name prefix").fill("Pool");
+  await expect(modal.getByLabel("Starting number")).toHaveValue("1");
+  await modal.getByLabel("Number of pods").fill("4");
+  await modal.getByLabel("Beds per pod").fill("1");
+  await modal.getByRole("button", { name: "Create Batch", exact: true }).click();
+  await expect(modal).toHaveCount(0);
+  saved = await savedPods(page);
+  expect(saved.slice(-4).map((pod: { name: string }) => pod.name)).toEqual([
+    "Pool 1",
+    "Pool 2",
+    "Pool 3",
+    "Pool 4",
+  ]);
+  expect(saved.slice(-4).every((pod: { beds: unknown[] }) => pod.beds.length === 1)).toBe(true);
+});
+
 test("pod modal uses a draft and preserves active patients", async ({ page }) => {
   await page.getByRole("button", { name: "Edit Pod A", exact: true }).click();
   const modal = page.getByRole("dialog", { name: "Edit pod", exact: true });

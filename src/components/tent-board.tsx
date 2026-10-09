@@ -899,7 +899,10 @@ export function TentBoard() {
   const [eventName, setEventName] = useState(DEFAULT_EVENT_NAME);
   const [currentClock, setCurrentClock] = useState("--:--");
   const [hydrated, setHydrated] = useState(false);
-  const [newName, setNewName] = useState("");
+  const [newName, setNewName] = useState("Pod");
+  const [addingPods, setAddingPods] = useState(false);
+  const [newStartNumber, setNewStartNumber] = useState("1");
+  const [batchMessage, setBatchMessage] = useState("");
   const [newZone, setNewZone] = useState("");
   const [newNote, setNewNote] = useState("");
   const [newCapabilities, setNewCapabilities] = useState("");
@@ -980,16 +983,71 @@ export function TentBoard() {
     [dispositions],
   );
 
-  const addPod = () => {
-    const count = Math.max(1, Math.min(Number.parseInt(newPodCount, 10) || 1, 12));
+  const nextBatchNumber = (prefix: string) => {
+    const beginning = `${prefix.trim().toLowerCase()} `;
+    const numbers = pods.flatMap((pod) => {
+      const name = pod.name.toLowerCase();
+      const suffix = name.startsWith(beginning) ? name.slice(beginning.length) : "";
+      return /^\d+$/.test(suffix) ? [Number(suffix)] : [];
+    });
+    return (
+      Math.max(
+        0,
+        ...numbers,
+        ...(prefix.trim().toLowerCase() === "pod" ? pods.map((pod) => pod.number ?? 0) : []),
+      ) + 1
+    );
+  };
+
+  const addPod = (keepOpen: boolean) => {
+    const count = Number(newPodCount);
+    const start = Number(newStartNumber);
+    const beds = Number(newBedCount);
     const baseName = newName.trim();
+    if (
+      !baseName ||
+      !Number.isInteger(count) ||
+      count < 1 ||
+      count > 100 ||
+      !Number.isSafeInteger(start) ||
+      start < 1 ||
+      start + count > 1000000 ||
+      !Number.isInteger(beds) ||
+      beds < 1 ||
+      beds > 12
+    ) {
+      setBatchMessage(
+        "Enter a name prefix, 1-100 pods, a starting number from 1-999900, and 1-12 beds per pod.",
+      );
+      return;
+    }
+    const names = Array.from({ length: count }, (_, i) => `${baseName} ${start + i}`);
+    const duplicate = names.find((name) =>
+      pods.some((pod) => pod.name.trim().toLowerCase() === name.toLowerCase()),
+    );
+    if (duplicate) {
+      setBatchMessage(`${duplicate} already exists. Choose a different starting number or prefix.`);
+      return;
+    }
+    if (
+      baseName.toLowerCase() === "pod" &&
+      pods.some((pod) => (pod.number ?? 0) >= start && (pod.number ?? 0) < start + count)
+    ) {
+      setBatchMessage(
+        "That bed-number range is already in use. Choose a different starting number.",
+      );
+      return;
+    }
     const capabilities = parseCapabilities(newCapabilities);
     const nextPods = [...pods];
 
     for (let i = 0; i < count; i += 1) {
       const id = nextPodId(nextPods);
-      const number = Math.max(0, ...nextPods.map((pod) => pod.number ?? 0)) + 1;
-      const name = baseName ? (count > 1 ? `${baseName} ${number}` : baseName) : `Pod ${number}`;
+      const number =
+        baseName.toLowerCase() === "pod"
+          ? start + i
+          : Math.max(0, ...nextPods.map((pod) => pod.number ?? 0)) + 1;
+      const name = names[i]!;
       const pod = emptyPod(
         id,
         name,
@@ -999,18 +1057,17 @@ export function TentBoard() {
         number,
         Number.parseInt(newBedCount, 10),
       );
-      pod.capabilities = capabilities;
+      pod.capabilities = [...capabilities];
       nextPods.push(pod);
     }
 
     setPods(nextPods);
     setLayoutMessage("");
-    setNewName("");
-    setNewZone("");
-    setNewNote("");
-    setNewCapabilities("");
-    setNewPodCount("1");
-    setNewColor(podColorOptions[nextPods.length % podColorOptions.length]);
+    setNewStartNumber(String(start + count));
+    setBatchMessage(
+      `Created ${names[0]}${count > 1 ? ` through ${names[count - 1]}` : ""}: ${count * beds} beds.`,
+    );
+    if (!keepOpen) setAddingPods(false);
   };
 
   const resetPatientForm = () => {
@@ -1534,7 +1591,11 @@ export function TentBoard() {
                 <div className="absolute right-0 top-full z-20 flex w-56 flex-col gap-2 rounded-md border bg-card p-3 shadow-xl">
                   <button
                     type="button"
-                    onClick={() => setSetup((enabled) => !enabled)}
+                    onClick={(event) => {
+                      setSetup((enabled) => !enabled);
+                      const menu = event.currentTarget.closest("details");
+                      if (menu) menu.open = false;
+                    }}
                     className={`rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
                       setup
                         ? "border-signal bg-signal text-background"
@@ -1724,78 +1785,153 @@ export function TentBoard() {
 
             <section className="order-1 flex min-w-0 flex-col gap-3 xl:order-2">
               {setup && (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-signal bg-card p-3">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Add pods
-                  </span>
-                  <input
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="Name (e.g. Pod G - Wound Care)"
-                    className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                  />
-                  <input
-                    value={newZone}
-                    onChange={(e) => setNewZone(e.target.value)}
-                    placeholder="Zone / location"
-                    className="w-44 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                  />
-                  <input
-                    value={newNote}
-                    onChange={(e) => setNewNote(e.target.value)}
-                    placeholder="Operational note"
-                    className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                  />
-                  <input
-                    value={newCapabilities}
-                    onChange={(e) => setNewCapabilities(e.target.value)}
-                    placeholder="Capabilities"
-                    className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={newPodCount}
-                    onChange={(e) => setNewPodCount(e.target.value)}
-                    aria-label="Number of pods"
-                    className="w-20 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                  />
-                  <input
-                    type="color"
-                    value={newColor}
-                    onChange={(e) => setNewColor(e.target.value)}
-                    title="Pod color"
-                    className="size-8 rounded-sm border border-border bg-background p-1"
-                  />
-                  <PodColorPresets value={newColor} onChange={setNewColor} />
-                  <label className="flex items-center gap-2 text-xs">
-                    Beds per pod
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      value={newBedCount}
-                      onChange={(e) => setNewBedCount(e.target.value)}
-                      className="min-h-11 w-16 rounded-sm border border-border bg-background px-2"
-                    />
-                  </label>
+                <div>
                   <button
                     type="button"
-                    onClick={addPod}
-                    className="rounded-sm border border-signal bg-signal px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                    className="min-h-11 rounded-sm bg-signal px-4 font-semibold text-background"
+                    onClick={() => {
+                      setNewStartNumber(String(nextBatchNumber(newName)));
+                      setBatchMessage("");
+                      setAddingPods(true);
+                    }}
                   >
-                    Add pod
+                    Add Pods
                   </button>
-                  <span className="w-full text-[10px] text-muted-foreground">
-                    In edit mode, patient movement is paused while the tent layout is adjusted.
-                  </span>
                   {layoutMessage && (
-                    <span className="w-full rounded-sm border border-signal/60 bg-signal/10 px-2 py-1.5 text-[11px] font-semibold text-foreground">
+                    <p role="status" className="mt-2 text-sm">
                       {layoutMessage}
-                    </span>
+                    </p>
                   )}
                 </div>
+              )}
+              {setup && addingPods && (
+                <Dialog open onOpenChange={setAddingPods}>
+                  <DialogContent className="board-modal">
+                    <DialogTitle>Add Pods</DialogTitle>
+                    <DialogDescription>
+                      {newName.trim() || "Pod"} {newStartNumber || "?"} -{" "}
+                      {Number(newStartNumber) + Number(newPodCount) - 1} · {newBedCount} beds each ·{" "}
+                      {Number(newPodCount) * Number(newBedCount)} beds total
+                    </DialogDescription>
+                    <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 [&_label]:flex [&_label]:min-w-0 [&_label]:flex-col [&_label]:gap-1 [&_label]:text-sm [&_input]:min-h-11 [&_input]:w-full">
+                      <label>
+                        Name prefix
+                        <input
+                          value={newName}
+                          onChange={(e) => {
+                            setNewName(e.target.value);
+                            setNewStartNumber(String(nextBatchNumber(e.target.value)));
+                            setBatchMessage("");
+                          }}
+                          placeholder="Pod or Pool"
+                          className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                        />
+                      </label>
+                      <label>
+                        Starting number
+                        <input
+                          type="number"
+                          min={1}
+                          max={999900}
+                          value={newStartNumber}
+                          onChange={(e) => setNewStartNumber(e.target.value)}
+                          className="rounded-sm border border-border bg-background px-2"
+                        />
+                      </label>
+                      <label>
+                        Zone / location
+                        <input
+                          value={newZone}
+                          onChange={(e) => setNewZone(e.target.value)}
+                          placeholder="Zone / location"
+                          className="w-44 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                        />
+                      </label>
+                      <label>
+                        Pod note
+                        <input
+                          value={newNote}
+                          onChange={(e) => setNewNote(e.target.value)}
+                          placeholder="Operational note"
+                          className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                        />
+                      </label>
+                      <label>
+                        Shared capabilities
+                        <input
+                          value={newCapabilities}
+                          onChange={(e) => setNewCapabilities(e.target.value)}
+                          placeholder="Cooling, IV Access, ALS"
+                          className="w-48 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                        />
+                      </label>
+                      <label>
+                        Number of pods
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={newPodCount}
+                          onChange={(e) => setNewPodCount(e.target.value)}
+                          aria-label="Number of pods"
+                          className="w-20 rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                        />
+                      </label>
+                      <div className="min-w-0">
+                        <label>
+                          Pod color
+                          <input
+                            type="color"
+                            value={newColor}
+                            onChange={(e) => setNewColor(e.target.value)}
+                            title="Pod color"
+                            className="size-8 rounded-sm border border-border bg-background p-1"
+                          />
+                        </label>
+                        <PodColorPresets value={newColor} onChange={setNewColor} />
+                      </div>
+                      <label className="flex items-center gap-2 text-xs">
+                        Beds per pod
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          value={newBedCount}
+                          onChange={(e) => setNewBedCount(e.target.value)}
+                          className="min-h-11 w-16 rounded-sm border border-border bg-background px-2"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAddingPods(false)}
+                        className="min-h-11 rounded-sm border border-border px-3"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addPod(true)}
+                        className="min-h-11 rounded-sm border border-signal px-3 text-sm"
+                      >
+                        Create & Add Another Batch
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => addPod(false)}
+                        className="min-h-11 rounded-sm border border-signal bg-signal px-3 py-1.5 text-sm font-bold text-background hover:opacity-90"
+                      >
+                        Create Batch
+                      </button>
+                    </div>
+                    {batchMessage && (
+                      <p role="status" className="text-sm">
+                        {batchMessage}
+                      </p>
+                    )}
+                  </DialogContent>
+                </Dialog>
               )}
               <div className="pod-grid grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
                 {pods.map((pod) => (
