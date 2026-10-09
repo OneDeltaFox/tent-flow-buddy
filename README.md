@@ -42,3 +42,16 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Browser checks
+
+Install Chromium once with `npx playwright install chromium`, then run `npm run test:e2e`.
+The suite starts a separate server on port 8081 and uses isolated browser storage.
+It covers desktop, phone, and tablet layouts, modal saves and cancellation, touch
+scrolling, long-press movement, invalid destinations, and disposition turnover.
+To use installed Microsoft Edge on Windows, set `$env:PLAYWRIGHT_CHANNEL='msedge'`
+in PowerShell before running the tests.
+
+Patient tiles use a 450 ms hold before movement starts. A normal tap opens the editor;
+moving before the hold completes leaves touch scrolling available. Patient and pod
+editors keep changes in a draft until Save and confirm before discarding changes.
