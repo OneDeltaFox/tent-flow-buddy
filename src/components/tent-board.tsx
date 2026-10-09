@@ -325,6 +325,14 @@ function BedTile({
         >
           {bed.bib ?? (bed.status === "cleaning" ? "CLR" : bed.label)}
         </span>
+        {bed.bib && bed.complaint && (
+          <span
+            title={bed.complaint}
+            className="block w-full truncate text-center font-sans text-[10px] leading-3"
+          >
+            {bed.complaint}
+          </span>
+        )}
       </PatientSurface>
       {bed.bib && onEdit && (
         <PatientDispositionMenu source={{ kind: "bed", podId, bedId: bed.id }} bib={bed.bib} />
