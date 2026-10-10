@@ -1,5 +1,9 @@
 # Race Tent Command
 
+## [Open App](https://onedeltafox.github.io/tent-flow-buddy/)
+
+Browser-local demo: use fictional patients only. Data is not shared between devices.
+
 Build a responsive web app that functions as a visual patient-flow and bed-management whiteboard for a race medical tent.
 
 This is not a medical charting system, EHR, or clinical decision-support tool. Do not add vitals, medications, treatment documentation, diagnoses, or detailed clinical records. The primary goal is to help a charge nurse quickly see:
@@ -55,3 +59,4 @@ in PowerShell before running the tests.
 Patient tiles use a 450 ms hold before movement starts. A normal tap opens the editor;
 moving before the hold completes leaves touch scrolling available. Patient and pod
 editors keep changes in a draft until Save and confirm before discarding changes.
+
