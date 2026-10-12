@@ -80,6 +80,16 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("button", { name: "Edit Pod A", exact: true })).toBeVisible();
 });
 
+test("End Race stays disabled and leaves patient data unchanged", async ({ page }) => {
+  const before = await savedPods(page);
+  await page.getByText("Board settings", { exact: true }).click();
+  const endRace = page.getByRole("button", { name: "End Race", exact: true });
+  await expect(endRace).toBeVisible();
+  await expect(endRace).toBeDisabled();
+  await expect(endRace).toHaveAttribute("type", "button");
+  expect(await savedPods(page)).toEqual(before);
+});
+
 test("patient modal saves and protects unsaved changes", async ({ page }) => {
   await page.getByRole("button", { name: "Edit patient A100", exact: true }).click();
   const modal = page.getByRole("dialog", { name: "Edit Patient" });
