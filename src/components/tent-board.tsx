@@ -1645,6 +1645,15 @@ export function TentBoard() {
                   >
                     Clear patient data
                   </button>
+                  {/* Enable only with explicit confirmation and verified aggregate-report storage before any data removal. */}
+                  <button
+                    type="button"
+                    disabled
+                    title="Not available yet"
+                    className="min-h-11 cursor-not-allowed rounded-sm border px-3 py-1.5 text-sm font-bold text-muted-foreground opacity-60"
+                  >
+                    End Race
+                  </button>
                   <button
                     type="button"
                     onClick={clearRace}
