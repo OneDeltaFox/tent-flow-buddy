@@ -28,11 +28,16 @@ test("restores a session without granting race access and signs out", async ({ p
     user: { id: "test-user", email: "tester@example.com" },
   })));
   await page.route("**/auth/v1/**", (route) => route.fulfill({ status: 204 }));
+  await page.route("**/rest/v1/rpc/my_races", (route) => route.fulfill({ json: [
+    { id: "test-race", name: "Development Test Race", role: "owner", state: "active", timezone: "America/New_York" },
+  ] }));
   await page.goto("/");
   await expect(page.getByText("tester@example.com", { exact: true })).toBeVisible();
-  await expect(page.getByRole("status")).toHaveText("Race access is not connected yet.");
+  await expect(page.getByText("Development Test Race", { exact: true })).toBeVisible();
+  await expect(page.getByText("owner · active", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+  await expect(page.getByText("Development Test Race", { exact: true })).not.toBeVisible();
 });
 
 test("fits a phone viewport", async ({ page }) => {
@@ -47,5 +52,5 @@ test("expired callback shows a recoverable error and clears the URL", async ({ p
   await page.goto("/#error=access_denied&error_code=otp_expired&error_description=Expired");
   await expect(page.getByRole("alert")).toContainText("Request a new link");
   await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
-  await expect(page).toHaveURL("http://127.0.0.1:8083/");
+  await expect(page).toHaveURL("http://127.0.0.1:8084/");
 });

@@ -2,8 +2,10 @@
 
 This separate entry point is not included in the Pages demo or its deployment.
 It implements email-link sign-in, SDK-managed callback/session refresh, local
-sign-out, and a deliberately restricted account screen. It does not load patient
-data, grant ownership, or provide race access.
+sign-out, and a read-only assigned-race list. It does not load patient
+data, grant ownership, or provide race editing. Migration 004 exposes only
+`public.my_races()` for authenticated members, with a pinned search path and
+explicit caller membership checks; anonymous execution is denied.
 
 ## Local configuration
 
@@ -34,7 +36,8 @@ Tests: `npx playwright test --config playwright.auth.config.ts` (mock Auth only)
    race permission; never infer owner access from an email in frontend code.
 5. Implement restricted API integration and test owner/editor/viewer isolation.
 
-No invitations or hosted settings were changed by this implementation. End Race
+Hosted setup has since created the owner account and an empty Development Test
+Race. Migration 004 still requires explicit hosted installation approval. End Race
 stays disabled. Real email delivery, invite callbacks, token refresh/revocation,
 and hosted role isolation still need integration testing. Do not use for real
 patient data yet. Existing database migrations were installed manually; reconcile

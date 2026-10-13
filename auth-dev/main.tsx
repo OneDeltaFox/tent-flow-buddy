@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient, type Session } from "@supabase/supabase-js";
 import { LogIn, LogOut } from "lucide-react";
+import { RaceList } from "./race-list";
 import "./styles.css";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
@@ -96,7 +97,7 @@ function SignIn() {
         {!client ? <p role="status">Development sign-in is not configured.</p> : loading ?
           <p role="status">Checking session...</p> : session ? <>
             <p className="break-all">{session.user.email}</p>
-            <p role="status">Race access is not connected yet.</p>
+            <RaceList key={session.user.id} client={client} />
             <button className={button} disabled={busy} onClick={signOut}><LogOut size={18} />Sign out</button>
           </> : <form onSubmit={signIn} className="grid gap-4">
             <label className="grid gap-2 font-medium">Email

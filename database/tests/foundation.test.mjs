@@ -66,6 +66,19 @@ test('database foundation', async (t) => {
     await assert.rejects(query('select * from race_private.status_board($1)',[race]),/permission denied/);
     await exec('reset role');
   });
+  await t.test('public race list enforces membership without disclosing owner ids',async()=>{
+    for (const [user, role, expectedRace] of [[owner,'owner',race],[editor,'editor',race],[viewer,'viewer',race],[outsider,'owner',foreignRace]]) {
+      const rows=(await asUser(user,'select * from public.my_races()')).rows;
+      assert.equal(rows.length,1);
+      assert.equal(rows[0].id,expectedRace);
+      assert.equal(rows[0].role,role);
+      assert.deepEqual(Object.keys(rows[0]).sort(),['id','name','role','state','timezone']);
+    }
+    assert.equal((await asUser(id(999),'select * from public.my_races()')).rows.length,0);
+    await exec('set role anon');
+    await assert.rejects(query('select * from public.my_races()'),/permission denied/);
+    await exec('reset role');
+  });
   await t.test('race isolation and viewer redaction',async()=>{
     assert.equal((await asUser(outsider,'select * from race_private.visits where race_id=$1',[race])).rows.length,0);
     assert.equal((await asUser(viewer,'select * from race_private.visit_details')).rows.length,0);
