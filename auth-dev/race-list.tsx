@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RefreshCw } from "lucide-react";
+import { RaceLayout } from "./race-layout";
 
 type Race = { id: string; name: string; timezone: string; state: string; role: string };
 
@@ -9,6 +10,7 @@ export function RaceList({ client }: { client: SupabaseClient }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [selected, setSelected] = useState<Race | null>(null);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -28,6 +30,7 @@ export function RaceList({ client }: { client: SupabaseClient }) {
     void load();
     return () => { active = false; window.clearTimeout(timeout); controller.abort(); };
   }, [client, attempt]);
+  if (selected) return <RaceLayout key={selected.id} client={client} race={selected} onBack={() => setSelected(null)} />;
   return <div className="grid gap-3" aria-label="Your races">
     <div className="flex items-center justify-between gap-3">
       <h3 className="text-lg font-semibold">Your races</h3>
@@ -44,6 +47,7 @@ export function RaceList({ client }: { client: SupabaseClient }) {
           <h4 className="break-words font-semibold">{race.name}</h4>
           <p className="capitalize">{race.role} · {race.state}</p>
           <p className="text-sm text-muted-foreground">{race.timezone}</p>
+          <button type="button" onClick={() => setSelected(race)} className="mt-3 min-h-12 rounded border border-border px-4 py-2">Open board</button>
         </li>)}</ul>}
   </div>;
 }

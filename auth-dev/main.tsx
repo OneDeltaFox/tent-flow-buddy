@@ -92,7 +92,7 @@ function SignIn() {
         <h1 className="text-2xl font-bold">Tent Flow</h1>
         <p className="text-sm text-muted-foreground">Development</p>
       </header>
-      <section className="mx-auto grid w-full max-w-md gap-5 px-6 py-12">
+      <section className={`mx-auto grid w-full ${session ? "max-w-6xl" : "max-w-md"} gap-5 px-6 py-12`}>
         <h2 className="text-xl font-semibold">{session ? "Account" : "Sign in"}</h2>
         {!client ? <p role="status">Development sign-in is not configured.</p> : loading ?
           <p role="status">Checking session...</p> : session ? <>

@@ -1,3 +1,4 @@
 @import "../src/styles.css";
 @source "./main.tsx";
 @source "./race-list.tsx";
+@source "./race-layout.tsx";

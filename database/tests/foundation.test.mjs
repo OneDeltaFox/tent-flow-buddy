@@ -79,6 +79,21 @@ test('database foundation', async (t) => {
     await assert.rejects(query('select * from public.my_races()'),/permission denied/);
     await exec('reset role');
   });
+  await t.test('layout is member-only and contains no patient details',async()=>{
+    for (const user of [owner,editor,viewer]) {
+      const result=(await asUser(user,'select public.race_layout($1) layout',[race])).rows[0].layout;
+      assert.equal(result.length,3);
+      assert.ok(result.every(p=>p.beds.every(b=>b.status==='open')));
+      assert.ok(!JSON.stringify(result).includes('FAKE-'));
+      assert.deepEqual(Object.keys(result[0]).sort(),['beds','capabilities','closed','color','id','kind','name']);
+      assert.deepEqual(Object.keys(result[0].beds[0]).sort(),['id','label','status']);
+    }
+    await assert.rejects(asUser(outsider,'select public.race_layout($1)',[race]),/Access denied/);
+    await assert.rejects(asUser(owner,'select public.race_layout($1)',[foreignRace]),/Access denied/);
+    await exec('set role anon');
+    await assert.rejects(query('select public.race_layout($1)',[race]),/permission denied/);
+    await exec('reset role');
+  });
   await t.test('race isolation and viewer redaction',async()=>{
     assert.equal((await asUser(outsider,'select * from race_private.visits where race_id=$1',[race])).rows.length,0);
     assert.equal((await asUser(viewer,'select * from race_private.visit_details')).rows.length,0);
