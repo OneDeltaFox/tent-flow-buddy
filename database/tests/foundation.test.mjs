@@ -169,6 +169,24 @@ test('database foundation', async (t) => {
     await assert.rejects(asUser(editor,'select * from race_private.report_preview($1)',[race]),/Access denied/);
     await assert.rejects(asUser(owner,'select * from race_private.report_preview($1)',[foreignRace]),/Access denied/);
   });
+  await t.test('pod batches require owner, validate settings, and rollback duplicate names',async()=>{
+    const batch=JSON.stringify([{name:'Batch 1',kind:'regular',color:'#ffcc00',beds:4,capabilities:['Cooling','IV']}]);
+    const create=(user,payload=batch)=>asUser(user,'select public.create_pods($1,$2)',[race,payload]);
+    await assert.rejects(create(editor),/Access denied/);
+    await assert.rejects(create(viewer),/Access denied/);
+    await assert.rejects(create(outsider),/Access denied/);
+    await assert.rejects(create(owner,'[]'),/1 to 50/);
+    await assert.rejects(create(owner,JSON.stringify([{name:'Bad',kind:'regular',color:'#ffcc00',beds:0,capabilities:[]}])),/1 to 20/);
+    assert.equal((await create(owner)).rows[0].create_pods,1);
+    const labels=(await query("select b.label from race_private.beds b join race_private.pods p on p.id=b.pod_id where p.name='Batch 1' order by b.label")).rows.map(r=>r.label);
+    assert.deepEqual(labels,['Batch 1-1','Batch 1-2','Batch 1-3','Batch 1-4']);
+    const duplicate=JSON.stringify([{name:'Rollback',kind:'pool',color:'#ffcc00',beds:1,capabilities:[]},JSON.parse(batch)[0]]);
+    await assert.rejects(create(owner,duplicate),/duplicate key/);
+    assert.equal((await query("select count(*)::int n from race_private.pods where name='Rollback'")).rows[0].n,0);
+    await exec('set role anon');
+    await assert.rejects(query('select public.create_pods($1,$2)',[race,batch]),/permission denied/);
+    await exec('reset role');
+  });
   await t.test('closing races reject commands and no End Race command exists',async()=>{
     await query("update race_private.races set state='closing' where id=$1",[race]);
     await assert.rejects(transition(owner,incoming,1,'dispositioned',null,'discharged'),/not active/);

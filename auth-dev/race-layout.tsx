@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ArrowLeft, RefreshCw } from "lucide-react";
+import { AddPods } from "./add-pods";
 
 type Pod = { id: string; name: string; color: string; kind: string; closed: boolean; capabilities: string[];
   beds: { id: string; label: string; status: "open" | "occupied" | "cleaning" }[] };
@@ -11,7 +12,7 @@ const tones = {
 };
 
 export function RaceLayout({ client, race, onBack }: {
-  client: SupabaseClient; race: { id: string; name: string }; onBack: () => void;
+  client: SupabaseClient; race: { id: string; name: string; role: string; state: string }; onBack: () => void;
 }) {
   const [pods, setPods] = useState<Pod[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +41,9 @@ export function RaceLayout({ client, race, onBack }: {
       <h3 className="min-w-0 flex-1 break-words text-xl font-semibold">{race.name}</h3>
       <button type="button" disabled={loading} onClick={() => setAttempt(v => v + 1)} aria-label="Refresh layout" title="Refresh layout" className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-border disabled:opacity-50"><RefreshCw size={20} /></button>
     </div>
-    <p className="text-sm text-muted-foreground">Read-only</p>
+    {race.role === "owner" && race.state === "active" ?
+      <AddPods client={client} raceId={race.id} onSaved={() => setAttempt(v => v + 1)} /> :
+      <p className="text-sm text-muted-foreground">Read-only</p>}
     {loading ? <p role="status">Loading pods...</p> : error ? <p role="alert">Unable to load this race. Refresh to retry.</p> : pods.length === 0 ?
       <p role="status">No pods have been added to this race.</p> :
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{pods.map(pod => <article key={pod.id}

@@ -43,9 +43,25 @@ test("restores a session without granting race access and signs out", async ({ p
   await expect(page.getByText("Pod 1", { exact: true })).toBeVisible();
   await expect(page.getByText("1-1", { exact: true })).toBeVisible();
   await expect(page.getByText("Turnover", { exact: true })).toBeVisible();
+  await page.route("**/rest/v1/rpc/create_pods", async route => {
+    expect(route.request().postDataJSON()).toMatchObject({ p_race: "test-race", p_pods: [
+      { name: "Pool 1", kind: "pool", beds: 1, capabilities: ["Cooling"] },
+      { name: "Pool 2", kind: "pool", beds: 1, capabilities: ["Cooling"] },
+    ] });
+    await route.fulfill({ json: 2 });
+  });
+  await page.getByRole("button", { name: "Add pods", exact: true }).click();
+  await page.getByLabel("Name prefix (optional)").fill("Pool");
+  await page.getByLabel("Number of pods").fill("2");
+  await page.getByLabel("Pod type").selectOption("pool");
+  await expect(page.getByLabel("Beds per pod")).toHaveValue("1");
+  await page.getByLabel("Capability", { exact: true }).fill("Cooling");
+  await page.getByRole("button", { name: "Add capability", exact: true }).click();
+  await page.getByRole("button", { name: "Create pods", exact: true }).click();
+  await expect(page.getByText("2 pods added.", { exact: true })).toBeVisible();
   await page.route("**/rest/v1/rpc/race_layout", route => route.fulfill({ json: [] }));
   await page.getByRole("button", { name: "Refresh layout" }).click();
-  await expect(page.getByRole("status")).toHaveText("No pods have been added to this race.");
+  await expect(page.getByText("No pods have been added to this race.", { exact: true })).toBeVisible();
   await page.route("**/rest/v1/rpc/race_layout", route => route.fulfill({ status: 403, json: { message: "Access denied" } }));
   await page.getByRole("button", { name: "Refresh layout" }).click();
   await expect(page.getByRole("alert")).toContainText("Unable to load this race");
