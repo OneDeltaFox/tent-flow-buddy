@@ -62,7 +62,7 @@ export function StatusBoard({
         </div>
         <dl className="flex flex-wrap gap-5 font-mono">
           {[
-            ["Census", occupied + occupiedPools],
+            ["Census", pods.flatMap(pod => pod.beds).filter(bed => bed.bib && !bed.reserved).length],
             ["Occupied beds", occupied],
             ["Open beds", open],
             ["Bed capacity", capacity],
@@ -137,7 +137,7 @@ export function StatusBoard({
               {pod.beds.map((bed) => (
                 <div key={bed.id} className="min-w-0">
                   <div
-                    className={`flex h-16 min-w-0 items-center justify-center rounded-sm border px-1 text-center font-mono text-2xl font-bold ${bedTone(bed)}`}
+                    className={`flex h-16 min-w-0 flex-col items-center justify-center rounded-sm border px-1 text-center font-mono text-2xl font-bold ${bedTone(bed)}`}
                     title={bed.bib ? `Race #${bed.bib}, bed ${bed.label}` : bed.label}
                   >
                     <span className="truncate">
@@ -149,6 +149,7 @@ export function StatusBoard({
                             ? "Closed"
                             : bed.label}
                     </span>
+                    {bed.reserved && <span className="text-base">In pool</span>}
                   </div>
                   <div
                     className="h-8 text-center font-mono text-lg font-semibold leading-8 tabular-nums"

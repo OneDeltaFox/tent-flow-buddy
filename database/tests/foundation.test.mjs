@@ -129,11 +129,14 @@ test('database foundation', async (t) => {
     const board=(await asUser(viewer,'select * from race_private.status_board($1)',[race])).rows.find(x=>x.bed_id===poolBed);
     assert.equal(new Date(board.medical_started_at).getTime(),new Date(start).getTime());
     assert.ok(board.pool_started_at); assert.equal('notes' in board,false);
-    await assert.rejects(transition(editor,visit,3,'assigned',bed),/Bed unavailable/);
-    const turnover=(await query('select id from race_private.turnovers where bed_id=$1 and ended_at is null',[bed])).rows[0].id;
-    await asUser(editor,'select race_private.ready_bed($1,$2)',[bed,turnover]);
-    await assert.rejects(asUser(editor,'select race_private.ready_bed($1,$2)',[bed,turnover]),/Stale turnover/);
+    assert.equal((await query('select bed_id from race_private.bed_reservations where visit_id=$1',[visit])).rows[0].bed_id,bed);
+    assert.equal((await query('select id from race_private.turnovers where bed_id=$1 and ended_at is null',[bed])).rows.length,0);
+    await assert.rejects(transition(editor,incoming,0,'assigned',bed),/reserved/);
+    const snapshot=(await asUser(owner,'select public.patient_board($1) as board',[race])).rows[0].board;
+    assert.equal(snapshot.reservations.length,1);
+    assert.equal(snapshot.pods.flatMap(p=>p.beds).find(b=>b.id===bed).status,'occupied');
     await transition(editor,visit,3,'assigned',bed);
+    assert.equal((await query('select * from race_private.bed_reservations where visit_id=$1',[visit])).rows.length,0);
     const oldPool=(await query('select * from race_private.placements where bed_id=$1',[poolBed])).rows[0];
     assert.ok(oldPool.ended_at);
     const poolTurnover=(await query('select id from race_private.turnovers where bed_id=$1 and ended_at is null',[poolBed])).rows[0].id;
@@ -146,6 +149,8 @@ test('database foundation', async (t) => {
     await assert.rejects(transition(editor,visit,6,'assigned',secondBed),/already dispositioned/);
     assert.equal((await query('select * from race_private.placements where visit_id=$1 and ended_at is null',[visit])).rows.length,0);
     assert.equal((await query('select cleaning from race_private.beds where id=$1',[poolBed])).rows[0].cleaning,true);
+    assert.equal((await query('select cleaning from race_private.beds where id=$1',[bed])).rows[0].cleaning,true);
+    assert.equal((await query('select * from race_private.bed_reservations where visit_id=$1',[visit])).rows.length,0);
   });
   await t.test('direct bed entry auto-arrives without inventing notification',async()=>{
     await transition(owner,incoming,0,'assigned',secondBed);
@@ -274,6 +279,28 @@ test('database foundation', async (t) => {
     await assert.rejects(query("select public.preview_section_pods($1,'#ff8800',2,4)",[r]),/permission denied/);
     await assert.rejects(query('select public.update_pod($1,$2,false,$3)',[pod.id,JSON.stringify(expected),'[]']),/permission denied/);
     await exec('reset role');
+  });
+  await t.test('pool transfers retain reservations and a different regular bed releases them atomically',async()=>{
+    const r=id(90), v=id(91);
+    await query('insert into race_private.races(id,owner_id,name) values($1,$2,$3)',[r,owner,'Reservation test']);
+    await asUser(owner,'select public.create_pods($1,$2)',[r,JSON.stringify([
+      {name:'Pod 1',kind:'regular',color:'#ff8800',beds:2,capabilities:[]},
+      {name:'Pool 1',kind:'pool',color:'#ffff00',beds:2,capabilities:[]}
+    ])]);
+    const beds=(await query('select b.id,p.kind from race_private.beds b join race_private.pods p on p.id=b.pod_id where b.race_id=$1 order by p.kind,b.label',[r])).rows;
+    const pools=beds.filter(b=>b.kind==='pool'), regulars=beds.filter(b=>b.kind==='regular');
+    await asUser(owner,'select public.save_patient($1,$2,null,$3,$4)',[r,v,JSON.stringify({bib:'TEST',triage:'untriaged'}),regulars[0].id]);
+    const move=(rev,b)=>asUser(owner,"select public.move_patient($1,$2,'assigned',$3)",[v,rev,b]);
+    await move(1,pools[0].id);
+    await assert.rejects(move(1,pools[1].id),/Stale/);
+    await move(2,pools[1].id);
+    assert.equal((await query('select bed_id from race_private.bed_reservations where visit_id=$1',[v])).rows[0].bed_id,regulars[0].id);
+    await assert.rejects(asUser(owner,"select race_private.transition_visit_without_reservation($1,3,'assigned',$2)",[v,regulars[0].id]),/permission denied/);
+    await assert.rejects(move(3,foreignBed),/unavailable/);
+    await move(3,regulars[1].id);
+    assert.equal((await query('select * from race_private.bed_reservations where visit_id=$1',[v])).rows.length,0);
+    assert.equal((await query('select cleaning from race_private.beds where id=$1',[regulars[0].id])).rows[0].cleaning,true);
+    assert.equal((await query('select count(*)::int n from race_private.turnovers where race_id=$1 and ended_at is null',[r])).rows[0].n,3);
   });
   await t.test('real concurrent clients cannot both claim one bed',{skip:!url},async()=>{
     const a=id(50), b=id(51), target=id(35);

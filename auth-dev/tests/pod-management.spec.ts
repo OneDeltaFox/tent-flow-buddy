@@ -8,7 +8,7 @@ async function setup(page: Page, role = "owner") {
       { id:"p2", name:"Pod 2", color:"#ffff00", kind:"regular", closed:false, capabilities:[], beds:[{id:"b2",label:"2-1",status:"occupied"}] },
     ],
     visits:[{id:"v1",revision:1,bib:"TEST-1",triage:"untriaged",complaint:"Dizziness",notes:"",source:"",eta:"",medical_started_at:"2026-10-14T10:00:00Z",dispositioned_at:null}],
-    placements:[{visit_id:"v1",bed_id:"b2",started_at:"2026-10-14T10:00:00Z",ended_at:null,kind:"regular"}], turnovers:[],
+    placements:[{visit_id:"v1",bed_id:"b2",started_at:"2026-10-14T10:00:00Z",ended_at:null,kind:"regular"}], turnovers:[], reservations: [] as {visit_id:string;bed_id:string}[],
   };
   await page.route("**/rest/v1/rpc/my_races", route=>route.fulfill({json:[{id:"race",name:"Test Race",state:"active",role}]}));
   await page.route("**/rest/v1/rpc/patient_board",route=>route.fulfill({json:snapshot}));
@@ -34,6 +34,41 @@ test("pool capacity is separate on both boards and stays in census", async ({pag
   await expect(stat("Bed saturation")).toContainText("0%");
   await expect(stat("Occupied pools")).toContainText("1");
   await expect(stat("Open pools")).toContainText("1 / 2");
+});
+
+test("reserved bed displays In pool, counts once and returns to its exact bed", async ({page})=>{
+  const snapshot = await setup(page);
+  snapshot.pods[0]!.beds[0]!.status = "occupied";
+  snapshot.pods[1]!.kind = "pool";
+  snapshot.placements[0]!.kind = "pool";
+  snapshot.reservations = [{visit_id:"v1",bed_id:"b1"}];
+  await page.getByRole("button",{name:"Refresh board"}).click();
+  const stat = (label:string) => page.getByText(label,{exact:true}).locator("..");
+  await expect(stat("Current census")).toContainText("1");
+  await expect(stat("Occupied beds")).toContainText("1");
+  await expect(stat("Open beds")).toContainText("0 / 1");
+  await expect(page.getByText("In pool",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Status Board",exact:true}).click();
+  await expect(stat("Census")).toContainText("1");
+  await expect(stat("Bed saturation")).toContainText("100%");
+  await expect(page.getByText("In pool",{exact:true})).toBeVisible();
+  await page.screenshot({path:"test-results/pool-reservation-status.png",fullPage:true});
+  await page.getByRole("button",{name:"Back to working board"}).click();
+  await page.getByRole("button",{name:"Edit patient TEST-1",exact:true}).filter({hasText:"In pool"}).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Move to pod")).toHaveValue("p2");
+  await dialog.getByLabel("Move to pod").selectOption("p1");
+  let saved = false;
+  await page.route("**/rest/v1/rpc/save_patient", async route => {
+    expect(route.request().postDataJSON()).toMatchObject({p_visit:"v1",p_revision:1,p_bed:"b1"});
+    snapshot.reservations=[]; snapshot.placements[0]!.bed_id="b1"; snapshot.placements[0]!.kind="regular";
+    snapshot.pods[1]!.beds[0]!.status="cleaning"; saved=true;
+    await route.fulfill({json:2});
+  });
+  await dialog.getByRole("button",{name:"Save",exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  expect(saved).toBe(true);
+  await expect(page.getByText("In pool",{exact:true})).toHaveCount(0);
 });
 
 test("owner can confirm capabilities and close/reopen pods", async ({page})=>{

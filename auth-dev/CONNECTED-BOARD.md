@@ -19,6 +19,12 @@ Migration 008 adds owner-only `update_pod`, `preview_section_pods`, and `add_sec
 
 Add pods offers existing color sections. Preview lists new pods and all shifted pod/bed labels; confirmation applies the complete change atomically. Stable bed IDs preserve placements and timers. Regular pod numbers are unique race-wide, while pools keep separate numbering. Existing sections must be contiguous and regular pod names numbered. Stale previews fail closed and require a fresh preview.
 
+## Pool reservations
+
+Migration 009 was installed manually in development on October 14, 2026. It adds protected bed reservations for subsequent regular-bed-to-pool moves; it does not infer reservations for preexisting pool placements. The original bed remains occupied/unavailable and displays "In pool". Census excludes the reservation copy. Pool-to-pool moves retain it; return releases it without turnover, while a different regular-bed assignment or disposition sends it to turnover. Physical placements remain singular and preserve separate pool intervals and the original medical start time. Reservation details are owner/editor-only; viewers receive occupied layout status without patient details through `race_layout`.
+
+The connected development board supports reservations. The browser-local public demo retains its existing movement behavior; no public deployment was made.
+
 ## Verification
 
 Run `npx tsc --project tsconfig.auth.json`, `npx vite build --config vite.auth.config.ts`, `npm run build:pages`, and `npx playwright test --config playwright.auth.config.ts`. Database tests run with `node --test tests/foundation.test.mjs` from `database/`. They use a disposable local database, not hosted patient data.

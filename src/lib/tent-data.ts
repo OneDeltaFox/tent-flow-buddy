@@ -3,6 +3,8 @@ export type BedStatus = "open" | "occupied" | "cleaning";
 export type Triage = "untriaged" | "immediate" | "delayed" | "minor";
 
 export type Bed = {
+  visitId?: string;
+  reserved?: boolean;
   id: string;
   label: string;
   status: BedStatus;

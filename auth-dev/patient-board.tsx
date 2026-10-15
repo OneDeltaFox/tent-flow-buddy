@@ -10,7 +10,7 @@ import { EditPod } from "./edit-pod";
 type Visit = { id: string; revision: number; bib: string; triage: Triage; complaint: string; notes: string; source: string; eta: string;
   medical_started_at: string | null; dispositioned_at: string | null; disposition: DispositionCategory; other_disposition: string | null };
 type Placement = { visit_id: string; bed_id: string; started_at: string; ended_at: string | null; kind: string };
-type Snapshot = { pods: Pod[]; visits: Visit[]; placements: Placement[]; turnovers: { id: string; bed_id: string }[] };
+type Snapshot = { pods: Pod[]; visits: Visit[]; placements: Placement[]; reservations?: { visit_id: string; bed_id: string }[]; turnovers: { id: string; bed_id: string }[] };
 
 export function PatientBoard({ client, race, onBack }: {
   client: SupabaseClient; race: { id: string; name: string; state: string; role: string }; onBack: () => void;
@@ -46,7 +46,7 @@ export function PatientBoard({ client, race, onBack }: {
     if (lock.current || !snapshot || needsRefresh || race.state !== "active") return false;
     lock.current = true; setBusy(true); setError("");
     const ref = "ref" in command ? command.ref : undefined;
-    const visitId = ref?.kind === "incoming" ? ref.incomingId : ref ? snapshot.placements.find(p => p.bed_id === ref.bedId && !p.ended_at)?.visit_id : undefined;
+    const visitId = ref?.kind === "incoming" ? ref.incomingId : ref ? (snapshot.placements.find(p => p.bed_id === ref.bedId && !p.ended_at)?.visit_id ?? snapshot.reservations?.find(r => r.bed_id === ref.bedId)?.visit_id) : undefined;
     const visit = snapshot.visits.find(v => v.id === visitId);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
@@ -82,8 +82,9 @@ export function PatientBoard({ client, race, onBack }: {
   const pods = snapshot ? [...snapshot.pods].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(pod => ({ ...pod, zone: "", staff: [], beds: [...pod.beds].sort((a,b) => a.label.localeCompare(b.label, undefined, { numeric: true })).map(original => {
     const bed = { ...original, label: original.label.replace(/^pod\s+(\d+)-(\d+)$/i, "$1-$2") };
     const placement = livePlacements.find(p => p.bed_id === bed.id);
-    const visit = snapshot.visits.find(v => v.id === placement?.visit_id);
-    return visit ? { ...bed, ...details(visit), arrivedAt: visit.medical_started_at ? Date.parse(visit.medical_started_at) : undefined,
+    const reservation = snapshot.reservations?.find(r => r.bed_id === bed.id);
+    const visit = snapshot.visits.find(v => v.id === (placement?.visit_id ?? reservation?.visit_id));
+    return visit ? { ...bed, ...details(visit), visitId: visit.id, reserved: Boolean(reservation), arrivedAt: visit.medical_started_at ? Date.parse(visit.medical_started_at) : undefined,
       since: visit.medical_started_at ? new Date(visit.medical_started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : undefined } : bed;
   }) })) : [];
   const settings = race.role === "owner" && race.state === "active" ? <details className="relative">

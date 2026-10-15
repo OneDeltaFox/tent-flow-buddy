@@ -313,7 +313,7 @@ function BedTile({
   return (
     <PatientDropTarget
       target={
-        !disabled && bed.status === "open" ? { kind: "bed", podId, bedId: bed.id } : undefined
+        !disabled && (bed.status === "open" || bed.reserved) ? { kind: "bed", podId, bedId: bed.id } : undefined
       }
       className="min-w-0 rounded-sm"
     >
@@ -329,6 +329,7 @@ function BedTile({
         >
           {bed.bib ?? (bed.status === "cleaning" ? "CLR" : bed.label)}
         </span>
+        {bed.reserved && <span className="text-xs font-bold">In pool</span>}
         {bed.bib && bed.complaint && (
           <span
             title={bed.complaint}
@@ -806,7 +807,7 @@ function PodDetail({
               key={bed.id}
               patient={patientFromBed(bed)}
               dispositionSource={{ kind: "bed", podId: pod.id, bedId: bed.id }}
-              locationLabel={`${bed.label} - in ${bed.since ?? "--:--"}`}
+              locationLabel={bed.reserved ? `${bed.label} - In pool` : `${bed.label} - in ${bed.since ?? "--:--"}`}
               onEdit={() => onEditPatient(pod.id, bed)}
             />
           ))}
@@ -987,7 +988,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
     const poolPods = pods.filter(isPoolPod);
     const activePools = poolPods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
     const activeBeds = regularPods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
-    const currentCensus = all.filter((bed) => bed.bib).length;
+    const currentCensus = all.filter((bed) => bed.bib && !bed.reserved).length;
     const occupiedBeds = regularPods.flatMap((pod) => pod.beds).filter((bed) => bed.status === "occupied").length;
 
     return {
@@ -1201,6 +1202,14 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
 
   const startPatientEdit = (podId: string, bed: Bed) => {
     if (!bed.bib) return;
+    if (bed.reserved) {
+      const actualPod = pods.find(pod => pod.beds.some(b => b.visitId === bed.visitId && !b.reserved));
+      const actualBed = actualPod?.beds.find(b => b.visitId === bed.visitId && !b.reserved);
+      if (!actualPod || !actualBed) return;
+      podId = actualPod.id;
+      bed = actualBed;
+    }
+    if (!bed.bib) return;
     const complaint = complaintSelectionFor(bed.complaint);
     setEditPatient({ kind: "bed", podId, bedId: bed.id });
     setEditPatientBib(bed.bib);
@@ -1280,7 +1289,9 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
 
     if (connected) {
       const moving = editPatientPod && (editPatient.kind === "incoming" || editPatientPod !== editPatient.podId);
-      const target = moving ? pods.find(pod => pod.id === editPatientPod && !pod.closed)?.beds.find(bed => bed.status === "open") : undefined;
+      const currentVisit = editPatient.kind === "bed" ? pods.flatMap(p => p.beds).find(b => b.id === editPatient.bedId)?.visitId : undefined;
+      const targetPod = moving ? pods.find(pod => pod.id === editPatientPod && !pod.closed) : undefined;
+      const target = targetPod?.beds.find(bed => bed.reserved && bed.visitId === currentVisit) ?? targetPod?.beds.find(bed => bed.status === "open");
       if (moving && !target) { setEditPatientMessage("Selected pod has no available bed. Refresh and choose again."); return; }
       if (await connected.run({ action: "save", ref: editPatient, details: updated, ...(target ? { bed: target.id } : {}) })) finishPatientEdit();
       else setEditPatientMessage("Save not confirmed. Close this window, refresh the board, and check before retrying.");
@@ -2116,7 +2127,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                           {pods.map((pod) => {
                             const open = pod.closed
                               ? 0
-                              : pod.beds.filter((bed) => bed.status === "open").length;
+                              : pod.beds.filter((bed) => bed.status === "open" || (bed.reserved && editPatient.kind === "bed" && bed.visitId === pods.flatMap(p => p.beds).find(b => b.id === editPatient.bedId)?.visitId)).length;
                             const current =
                               editPatient.kind === "bed" && editPatient.podId === pod.id;
                             return (
