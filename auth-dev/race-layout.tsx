@@ -5,7 +5,7 @@ import { AddPods } from "./add-pods";
 import { PodCard } from "@/components/tent-board";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
-type Pod = { id: string; name: string; color: string; kind: string; closed: boolean; capabilities: string[];
+type Pod = { id: string; name: string; color: string; kind: "regular" | "pool"; closed: boolean; capabilities: string[];
   beds: { id: string; label: string; status: "open" | "occupied" | "cleaning" }[] };
 const tones = {
   open: "border-status-open text-status-open bg-status-open/15",

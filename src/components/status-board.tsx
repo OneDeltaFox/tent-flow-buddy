@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Maximize } from "lucide-react";
 import type { Bed, Pod } from "@/lib/tent-data";
+import { isPoolPod } from "@/lib/tent-data";
 
 function elapsedTime(arrivedAt: number | undefined, now: number): string {
   if (arrivedAt === undefined || !Number.isFinite(arrivedAt) || arrivedAt > now) return "--:--";
@@ -30,13 +31,19 @@ export function StatusBoard({
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const beds = pods.flatMap((pod) => pod.beds);
+  const regularPods = pods.filter((pod) => !isPoolPod(pod));
+  const poolPods = pods.filter(isPoolPod);
+  const poolSpaces = poolPods.flatMap((pod) => pod.beds);
+  const occupiedPools = poolSpaces.filter((bed) => bed.bib).length;
+  const availablePools = poolPods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
+  const openPools = availablePools.filter((bed) => bed.status === "open").length;
+  const beds = regularPods.flatMap((pod) => pod.beds);
   const occupied = beds.filter((bed) => bed.bib).length;
-  const availablePods = pods.filter((pod) => !pod.closed);
+  const availablePods = regularPods.filter((pod) => !pod.closed);
   const open = availablePods
     .flatMap((pod) => pod.beds)
     .filter((bed) => bed.status === "open").length;
-  const capacity = pods.reduce(
+  const capacity = regularPods.reduce(
     (total, pod) =>
       total + (pod.closed ? pod.beds.filter((bed) => bed.bib).length : pod.beds.length),
     0,
@@ -55,10 +62,13 @@ export function StatusBoard({
         </div>
         <dl className="flex flex-wrap gap-5 font-mono">
           {[
-            ["Occupied", occupied],
-            ["Open", open],
-            ["Capacity", capacity],
-            ["Saturation", `${saturation}%`],
+            ["Census", occupied + occupiedPools],
+            ["Occupied beds", occupied],
+            ["Open beds", open],
+            ["Bed capacity", capacity],
+            ["Bed saturation", `${saturation}%`],
+            ["Occupied pools", occupiedPools],
+            ["Open pools", `${openPools} / ${availablePools.length}`],
             ["Incoming", incomingCount],
           ].map(([label, value]) => (
             <div key={label}>

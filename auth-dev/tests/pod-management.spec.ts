@@ -16,6 +16,26 @@ async function setup(page: Page, role = "owner") {
   return snapshot;
 }
 
+test("pool capacity is separate on both boards and stays in census", async ({page})=>{
+  const snapshot = await setup(page);
+  snapshot.pods[1]!.kind = "pool";
+  snapshot.pods.push({id:"p3",name:"Pool 2",color:"#ffff00",kind:"pool",closed:false,capabilities:[],beds:[{id:"b3",label:"Pool 2-1",status:"open"}]});
+  snapshot.pods.push({id:"p4",name:"Pool 3",color:"#ffff00",kind:"pool",closed:true,capabilities:[],beds:[{id:"b4",label:"Pool 3-1",status:"open"}]});
+  await page.getByRole("button",{name:"Refresh board"}).click();
+  const stat = (label: string) => page.getByText(label,{exact:true}).locator("..");
+  await expect(stat("Current census")).toContainText("1");
+  await expect(stat("Occupied beds")).toContainText("0");
+  await expect(stat("Open beds")).toContainText("1 / 1");
+  await expect(stat("Occupied pools")).toContainText("1");
+  await expect(stat("Open pools")).toContainText("1 / 2");
+  await page.getByRole("button",{name:"Status Board",exact:true}).click();
+  await expect(stat("Census")).toContainText("1");
+  await expect(stat("Bed capacity")).toContainText("1");
+  await expect(stat("Bed saturation")).toContainText("0%");
+  await expect(stat("Occupied pools")).toContainText("1");
+  await expect(stat("Open pools")).toContainText("1 / 2");
+});
+
 test("owner can confirm capabilities and close/reopen pods", async ({page})=>{
   const snapshot=await setup(page);
   let saves=0;

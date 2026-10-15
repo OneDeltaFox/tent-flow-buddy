@@ -21,6 +21,7 @@ import {
   initialDispositions,
   initialIncoming,
   initialPods,
+  isPoolPod,
   numberPodBeds,
 } from "@/lib/tent-data";
 
@@ -982,13 +983,19 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
 
   const totals = useMemo(() => {
     const all = pods.flatMap((pod) => pod.beds);
-    const activeBeds = pods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
+    const regularPods = pods.filter((pod) => !isPoolPod(pod));
+    const poolPods = pods.filter(isPoolPod);
+    const activePools = poolPods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
+    const activeBeds = regularPods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
     const currentCensus = all.filter((bed) => bed.bib).length;
-    const occupiedBeds = all.filter((bed) => bed.status === "occupied").length;
+    const occupiedBeds = regularPods.flatMap((pod) => pod.beds).filter((bed) => bed.status === "occupied").length;
 
     return {
       currentCensus,
       occupiedBeds,
+      occupiedPools: poolPods.flatMap((pod) => pod.beds).filter((bed) => bed.status === "occupied").length,
+      openPools: activePools.filter((bed) => bed.status === "open").length,
+      totalPools: activePools.length,
       open: activeBeds.filter((bed) => bed.status === "open").length,
       totalBeds: activeBeds.length,
       incoming: incomingQueue.length,
@@ -1559,6 +1566,8 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
     { label: "Current census", value: totals.currentCensus, tone: "text-foreground" },
     { label: "Occupied beds", value: totals.occupiedBeds, tone: "text-status-occupied" },
     { label: "Open beds", value: `${totals.open} / ${totals.totalBeds}`, tone: "text-status-open" },
+    { label: "Occupied pools", value: totals.occupiedPools, tone: "text-status-occupied" },
+    { label: "Open pools", value: `${totals.openPools} / ${totals.totalPools}`, tone: "text-status-open" },
     { label: "Incoming", value: incomingQueue.length, tone: "text-signal" },
     { label: "Seen today", value: totals.seenToday, tone: "text-foreground" },
   ];
