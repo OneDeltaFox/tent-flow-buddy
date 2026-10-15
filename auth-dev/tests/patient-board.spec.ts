@@ -64,7 +64,7 @@ test("connected intake, assignment, edit, disposition and turnover use RPCs with
   await page.getByRole("combobox",{name:"Disposition patient TEST-1"}).selectOption("other");
   await modal.getByLabel("Other disposition description").fill("Test transport");
   await modal.getByRole("button",{name:"Confirm disposition"}).click();
-  await page.getByRole("button",{name:/Pod 1/}).click();
+  await page.getByRole("button",{name:/^Pod 1 /}).click();
   await modal.getByRole("button",{name:"1-1 ready"}).click();
   await expect(modal.getByRole("button",{name:"1-1 ready"})).toHaveCount(0);
   await page.keyboard.press("Escape");

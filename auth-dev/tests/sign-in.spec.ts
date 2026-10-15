@@ -41,7 +41,7 @@ test("restores a session without granting race access and signs out", async ({ p
   ] } }));
   await page.getByRole("button", { name: "Open board" }).click();
   await expect(page.getByText("Pod 1", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /Pod 1/ }).click();
+  await page.getByRole("button", { name: /^Pod 1 / }).click();
   await expect(page.getByRole("button", { name: "1-1 ready" })).toBeVisible();
   await expect(page.getByText("Turnover", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -99,7 +99,7 @@ test("shared pod tiles are read-only and never load or overwrite demo data", asy
   await expect(page.getByRole("button", { name: "New Patient" })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/connected-board-phone.png", fullPage: true });
-  await page.getByRole("button", { name: /Pod 1/ }).click();
+  await page.getByRole("button", { name: /^Pod 1 / }).click();
   await expect(page.getByRole("dialog")).toContainText("occupied");
   await page.keyboard.press("Escape");
   expect(await page.evaluate(() => localStorage.getItem("tent-board-pods-v3"))).toBe("demo-sentinel");

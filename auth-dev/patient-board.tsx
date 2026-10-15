@@ -5,6 +5,7 @@ import { TentBoard } from "@/components/tent-board";
 import type { BoardCommand } from "@/lib/connected-board";
 import type { Pod, Triage, DispositionCategory } from "@/lib/tent-data";
 import { AddPods } from "./add-pods";
+import { EditPod } from "./edit-pod";
 
 type Visit = { id: string; revision: number; bib: string; triage: Triage; complaint: string; notes: string; source: string; eta: string;
   medical_started_at: string | null; dispositioned_at: string | null; disposition: DispositionCategory; other_disposition: string | null };
@@ -18,6 +19,7 @@ export function PatientBoard({ client, race, onBack }: {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [needsRefresh, setNeedsRefresh] = useState(false);
+  const [editingPod, setEditingPod] = useState<Pod | null>(null);
   const lock = useRef(false);
   const alive = useRef(true);
   const createId = useRef<string | null>(null);
@@ -86,7 +88,7 @@ export function PatientBoard({ client, race, onBack }: {
   }) })) : [];
   const settings = race.role === "owner" && race.state === "active" ? <details className="relative">
     <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded border px-3"><Settings size={16} />Race Settings</summary>
-    <div className="absolute right-0 top-full z-20 w-64 rounded border bg-card p-3 shadow-xl"><AddPods client={client} raceId={race.id} onSaved={() => { void refresh(); }} /></div>
+    <div className="absolute right-0 top-full z-20 w-64 rounded border bg-card p-3 shadow-xl"><AddPods client={client} raceId={race.id} pods={snapshot?.pods ?? []} onSaved={() => { void refresh(); }} /></div>
   </details> : null;
   return <section className="grid gap-3">
     <div className="flex gap-3">
@@ -100,7 +102,9 @@ export function PatientBoard({ client, race, onBack }: {
       <div inert={busy || needsRefresh || race.state !== "active"}>
         <TentBoard connected={{ pods, incoming: snapshot.visits.filter(v => !v.dispositioned_at && !livePlacements.some(p => p.visit_id === v.id)).map(v => ({ id: v.id, ...details(v), source: v.source, eta: v.eta })),
           dispositions: snapshot.visits.filter(v => v.dispositioned_at).map(v => ({ id: v.id, ...details(v), category: v.disposition, time: new Date(v.dispositioned_at!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }), from: "Medical", description: v.other_disposition ?? undefined })),
-          eventName: race.name, run, settings, readOnly: race.state !== "active" }} />
+          eventName: race.name, run, settings, readOnly: race.state !== "active",
+          ...(race.role === "owner" && race.state === "active" ? { onEditPod: (id: string) => setEditingPod(snapshot.pods.find(pod => pod.id === id) ?? null) } : {}) }} />
       </div>}
+    {editingPod && <EditPod key={editingPod.id} client={client} pod={editingPod} onClose={() => setEditingPod(null)} onSaved={() => { void refresh(); }} />}
   </section>;
 }

@@ -13,4 +13,5 @@ export type ConnectedBoard = {
   run: (command: BoardCommand) => Promise<boolean>;
   settings: ReactNode;
   readOnly: boolean;
+  onEditPod?: (podId: string) => void;
 };

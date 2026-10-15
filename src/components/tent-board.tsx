@@ -2012,14 +2012,14 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
               <div className="pod-grid grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
                 {pods.map((pod) => (
                   <PodCard
-                    layoutLocked={Boolean(connected)}
+                    layoutLocked={Boolean(connected) && !connected?.onEditPod}
                     readOnly={connected?.readOnly ?? false}
                     key={pod.id}
                     pod={pod}
                     selected={selectedPod === pod.id}
                     setup={setup}
                     onSelect={() => setSelectedPod(selectedPod === pod.id ? null : pod.id)}
-                    onEdit={() => setEditingPod(pod.id)}
+                    onEdit={() => connected ? connected.onEditPod?.(pod.id) : setEditingPod(pod.id)}
                     onEditPatient={startPatientEdit}
                   />
                 ))}

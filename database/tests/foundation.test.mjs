@@ -224,6 +224,57 @@ test('database foundation', async (t) => {
     await query("update race_private.races set state='active' where id=$1",[race]);
     assert.equal((await query("select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='race_private' and proname in ('end_race','close_race','delete_patient')")).rows.length,0);
   });
+  await t.test('pod management preserves patients and atomically renumbers color sections',async()=>{
+    const r=id(80), patient=id(81);
+    await query('insert into race_private.races(id,owner_id,name) values($1,$2,$3)',[r,owner,'Section test']);
+    await query("insert into race_private.memberships values($1,$2,'editor'),($1,$3,'viewer')",[r,editor,viewer]);
+    await asUser(owner,'select public.create_pods($1,$2)',[r,JSON.stringify([
+      ...[1,2,3,4].map(n=>({name:`Pod ${n}`,kind:'regular',color:n<=2?'#ff8800':'#ffff00',beds:2,capabilities:['Cooling']})),
+      {name:'Pool 1',kind:'pool',color:'#ff8800',beds:1,capabilities:[]}
+    ])]);
+    const pod=(await query("select * from race_private.pods where race_id=$1 and name='Pod 3'",[r])).rows[0];
+    const beds=(await query('select * from race_private.beds where pod_id=$1 order by label',[pod.id])).rows;
+    await asUser(owner,'select public.save_patient($1,$2,null,$3,$4)',[r,patient,JSON.stringify({bib:'SECTION-TEST'}),beds[0].id]);
+    const before=(await query('select * from race_private.visits where id=$1',[patient])).rows[0];
+    const expected={name:pod.name,closed:false,capabilities:['Cooling']};
+    const edit=(user,closed,caps,old=expected)=>asUser(user,'select public.update_pod($1,$2,$3,$4)',[pod.id,JSON.stringify(old),closed,JSON.stringify(caps)]);
+    for(const user of [editor,viewer,outsider]) await assert.rejects(edit(user,true,[]),/Access denied/);
+    await edit(owner,true,['Cooling','IV','IV']);
+    await assert.rejects(edit(owner,false,[]),/Pod changed/);
+    await assert.rejects(asUser(owner,'select public.save_patient($1,$2,null,$3,$4)',[r,id(82),JSON.stringify({bib:'REJECTED'}),beds[1].id]),/Bed unavailable/);
+    assert.equal((await query('select bed_id from race_private.placements where visit_id=$1 and ended_at is null',[patient])).rows[0].bed_id,beds[0].id);
+    await edit(owner,false,['Cooling'],{name:pod.name,closed:true,capabilities:['Cooling','IV']});
+    const preview=(user=owner)=>asUser(user,"select public.preview_section_pods($1,'#ff8800',2,4) plan",[r]);
+    for(const user of [editor,viewer,outsider]) await assert.rejects(preview(user),/Access denied/);
+    let plan=(await preview()).rows[0].plan;
+    assert.deepEqual(plan.new_names,['Pod 3','Pod 4']);
+    assert.equal(plan.changes.find(c=>c.id===pod.id).to,'Pod 5');
+    const apply=(user,token,caps=[])=>asUser(user,"select public.add_section_pods($1,'#ff8800',2,4,$2,$3)",[r,JSON.stringify(caps),token]);
+    for(const user of [editor,viewer,outsider]) await assert.rejects(apply(user,plan.token),/Access denied/);
+    await query('update race_private.beds set cleaning=true where id=$1',[beds[1].id]);
+    await assert.rejects(apply(owner,plan.token),/Layout changed/);
+    plan=(await preview()).rows[0].plan;
+    await assert.rejects(apply(owner,plan.token,[123]),/Invalid capabilities/);
+    assert.equal((await query('select name from race_private.pods where id=$1',[pod.id])).rows[0].name,'Pod 3');
+    await apply(owner,plan.token,['IV']);
+    await assert.rejects(apply(owner,plan.token),/Layout changed/);
+    assert.equal((await query('select name from race_private.pods where id=$1',[pod.id])).rows[0].name,'Pod 5');
+    const afterBeds=(await query('select * from race_private.beds where pod_id=$1 order by label',[pod.id])).rows;
+    assert.deepEqual(afterBeds.map(b=>b.id),beds.map(b=>b.id));
+    assert.deepEqual(afterBeds.map(b=>b.label),['5-1','5-2']);
+    assert.equal(afterBeds[1].cleaning,true);
+    assert.deepEqual((await query('select * from race_private.visits where id=$1',[patient])).rows[0],before);
+    assert.equal((await query('select bed_id from race_private.placements where visit_id=$1 and ended_at is null',[patient])).rows[0].bed_id,beds[0].id);
+    assert.equal((await query("select count(*)::int n from race_private.pods where race_id=$1 and name='Pool 1'",[r])).rows[0].n,1);
+    await assert.rejects(asUser(owner,'select public.create_pods($1,$2)',[r,JSON.stringify([{name:'3',kind:'regular',color:'#ff8800',beds:1,capabilities:[]}])]),/duplicate key/);
+    await query("update race_private.races set state='closed' where id=$1",[r]);
+    await assert.rejects(preview(),/not active/);
+    await assert.rejects(edit(owner,true,[]),/not active/);
+    await exec('set role anon');
+    await assert.rejects(query("select public.preview_section_pods($1,'#ff8800',2,4)",[r]),/permission denied/);
+    await assert.rejects(query('select public.update_pod($1,$2,false,$3)',[pod.id,JSON.stringify(expected),'[]']),/permission denied/);
+    await exec('reset role');
+  });
   await t.test('real concurrent clients cannot both claim one bed',{skip:!url},async()=>{
     const a=id(50), b=id(51), target=id(35);
     await query('insert into race_private.beds(id,race_id,pod_id,label) values($1,$2,$3,$4)',[target,race,regular,'1-3']);
