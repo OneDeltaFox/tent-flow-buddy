@@ -187,6 +187,37 @@ test('database foundation', async (t) => {
     await assert.rejects(query('select public.create_pods($1,$2)',[race,batch]),/permission denied/);
     await exec('reset role');
   });
+  await t.test('patient RPCs enforce access, atomic edits, revisions and stable create IDs',async()=>{
+    const fresh=id(70), target=id(71);
+    await query('insert into race_private.beds(id,race_id,pod_id,label) values($1,$2,$3,$4)',[target,race,regular,'1-70']);
+    const payload=JSON.stringify({bib:'TEST-70',complaint:'Dizziness',notes:'Private note'});
+    const save=(user,revision=null,destination=null,body=payload)=>asUser(user,'select public.save_patient($1,$2,$3,$4,$5)',[race,fresh,revision,body,destination]);
+    for(const user of [viewer,outsider]) {
+      await assert.rejects(save(user),/Access denied/);
+      await assert.rejects(asUser(user,'select public.patient_board($1)',[race]),/Access denied/);
+    }
+    await assert.rejects(save(editor,null,closedBed),/Bed unavailable/);
+    assert.equal((await query('select id from race_private.visits where id=$1',[fresh])).rows.length,0);
+    await save(editor);
+    await assert.rejects(save(editor),/Stale visit/);
+    const snapshot=(await asUser(owner,'select public.patient_board($1) board',[race])).rows[0].board;
+    const created=snapshot.visits.find(v=>v.id===fresh);
+    assert.equal(created.triage,'untriaged'); assert.ok(created.notified_at); assert.equal(created.medical_started_at,null);
+    await assert.rejects(save(editor,1,closedBed,JSON.stringify({bib:'SHOULD-ROLLBACK'})),/Bed unavailable/);
+    assert.equal((await query('select bib from race_private.visit_details where visit_id=$1',[fresh])).rows[0].bib,'TEST-70');
+    await save(editor,1,target);
+    await assert.rejects(save(editor,1),/Stale visit/);
+    await assert.rejects(asUser(viewer,"select public.move_patient($1,2,'dispositioned',null,'discharged')",[fresh]),/Access denied/);
+    await asUser(editor,"select public.move_patient($1,2,'dispositioned',null,'discharged')",[fresh]);
+    const turnover=(await query('select id from race_private.turnovers where bed_id=$1 and ended_at is null',[target])).rows[0].id;
+    await asUser(editor,'select public.ready_patient_bed($1,$2)',[target,turnover]);
+    await assert.rejects(asUser(editor,'select public.ready_patient_bed($1,$2)',[target,turnover]),/Stale turnover/);
+    await assert.rejects(save(editor,3),/already dispositioned/);
+    await exec('set role anon');
+    await assert.rejects(query('select public.patient_board($1)',[race]),/permission denied/);
+    await assert.rejects(query('select public.save_patient($1,$2,null,$3)',[race,id(72),payload]),/permission denied/);
+    await exec('reset role');
+  });
   await t.test('closing races reject commands and no End Race command exists',async()=>{
     await query("update race_private.races set state='closing' where id=$1",[race]);
     await assert.rejects(transition(owner,incoming,1,'dispositioned',null,'discharged'),/not active/);

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Plus, X } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export function AddPods({ client, raceId, onSaved }: { client: SupabaseClient; raceId: string; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
@@ -44,7 +45,11 @@ export function AddPods({ client, raceId, onSaved }: { client: SupabaseClient; r
   return <div className="grid gap-3">
     <button type="button" className={`${button} justify-self-start`} onClick={() => { setOpen(!open); setError(""); }} disabled={busy}><Plus size={18} />Add pods</button>
     {saved && <p role="status">{saved}</p>}
-    {open && <form onSubmit={submit} className="grid gap-4 border-y border-border py-4">
+    <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value); }}>
+    <DialogContent className="board-modal">
+    <DialogTitle>Add pods</DialogTitle>
+    <DialogDescription className="sr-only">Create a pod batch for this race</DialogDescription>
+    <form onSubmit={submit} className="grid gap-4 border-y border-border py-4">
       <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <label className="grid gap-2">Name prefix (optional)<input className={input} maxLength={60} value={prefix} onChange={e => setPrefix(e.target.value)} /></label>
         <label className="grid gap-2">Starting number<input className={input} type="number" min={1} max={9999} required value={start} onChange={e => setStart(Number(e.target.value))} /></label>
@@ -62,6 +67,8 @@ export function AddPods({ client, raceId, onSaved }: { client: SupabaseClient; r
       {error && <p role="alert">{error}</p>}
       <div className="flex flex-wrap gap-3"><button className={button} disabled={busy || Boolean(capability.trim())}>{busy ? "Saving..." : "Create pods"}</button>
         <button type="button" className={button} disabled={busy} onClick={() => setOpen(false)}>Cancel</button></div>
-    </form>}
+    </form>
+    </DialogContent>
+    </Dialog>
   </div>;
 }

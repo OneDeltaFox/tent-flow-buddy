@@ -5,8 +5,8 @@ import { LogIn, LogOut } from "lucide-react";
 import { RaceList } from "./race-list";
 import "./styles.css";
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const url = import.meta.env["VITE_SUPABASE_URL"];
+const key = import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
 const callbackFailed = new URLSearchParams(window.location.hash.slice(1)).has("error") ||
   new URLSearchParams(window.location.search).has("error");
 // Only modern publishable keys are accepted. Never put a service-role key here.
@@ -92,7 +92,7 @@ function SignIn() {
         <h1 className="text-2xl font-bold">Tent Flow</h1>
         <p className="text-sm text-muted-foreground">Development</p>
       </header>
-      <section className={`mx-auto grid w-full ${session ? "max-w-6xl" : "max-w-md"} gap-5 px-6 py-12`}>
+      <section className={`mx-auto grid w-full ${session ? "max-w-none px-2 py-4" : "max-w-md px-6 py-12"} gap-5`}>
         <h2 className="text-xl font-semibold">{session ? "Account" : "Sign in"}</h2>
         {!client ? <p role="status">Development sign-in is not configured.</p> : loading ?
           <p role="status">Checking session...</p> : session ? <>

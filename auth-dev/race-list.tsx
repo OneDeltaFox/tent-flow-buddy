@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RefreshCw } from "lucide-react";
 import { RaceLayout } from "./race-layout";
+import { PatientBoard } from "./patient-board";
 
 type Race = { id: string; name: string; timezone: string; state: string; role: string };
 
@@ -30,7 +31,9 @@ export function RaceList({ client }: { client: SupabaseClient }) {
     void load();
     return () => { active = false; window.clearTimeout(timeout); controller.abort(); };
   }, [client, attempt]);
-  if (selected) return <RaceLayout key={selected.id} client={client} race={selected} onBack={() => setSelected(null)} />;
+  if (selected) return selected.role === "viewer"
+    ? <RaceLayout key={selected.id} client={client} race={selected} onBack={() => setSelected(null)} />
+    : <PatientBoard key={selected.id} client={client} race={selected} onBack={() => setSelected(null)} />;
   return <div className="grid gap-3" aria-label="Your races">
     <div className="flex items-center justify-between gap-3">
       <h3 className="text-lg font-semibold">Your races</h3>
