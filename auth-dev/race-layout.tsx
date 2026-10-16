@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ArrowLeft, RefreshCw, Settings } from "lucide-react";
 import { AddPods } from "./add-pods";
+import { useAutoRefresh } from "./auto-refresh";
 import { PodCard } from "@/components/tent-board";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
@@ -21,25 +22,31 @@ export function RaceLayout({ client, race, onBack }: {
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const autoLoad = useRef<() => Promise<void>>(async () => {});
+  const canRefresh = useAutoRefresh(() => autoLoad.current());
   const selected = pods.find(pod => pod.id === selectedId);
   const activeBeds = pods.filter(pod => !pod.closed).flatMap(pod => pod.beds);
   const occupied = pods.flatMap(pod => pod.beds).filter(bed => bed.status === "occupied").length;
   useEffect(() => {
     let active = true;
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    let controller: AbortController | null = null;
     setPods([]); setSelectedId(null); setLoading(true); setError(false);
-    async function load() {
+    async function load(background = false) {
+      if (controller) return;
+      const request = new AbortController();
+      controller = request;
+      const timeout = window.setTimeout(() => request.abort(), 15000);
       try {
-        const result = await client.rpc("race_layout", { p_race: race.id }).abortSignal(controller.signal);
+        const result = await client.rpc("race_layout", { p_race: race.id }).abortSignal(request.signal);
         if (!active) return;
         if (result.error) setError(true);
-        else setPods(result.data ?? []);
+        else if (!background || canRefresh()) { setPods(result.data ?? []); setError(false); }
       } catch { if (active) setError(true); }
-      finally { window.clearTimeout(timeout); if (active) setLoading(false); }
+      finally { window.clearTimeout(timeout); controller = null; if (active) setLoading(false); }
     }
+    autoLoad.current = () => load(true);
     void load();
-    return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
+    return () => { active = false; controller?.abort(); autoLoad.current = async () => {}; };
   }, [client, race.id, attempt]);
   return <section aria-label="Race layout" className="grid gap-4">
     <div className="flex items-center gap-3">
@@ -59,7 +66,7 @@ export function RaceLayout({ client, race, onBack }: {
         </div>
       </details>}
     </div>
-    <p className="text-sm text-muted-foreground">Layout only. Patient records and patient actions are not connected yet.</p>
+    <p className="text-sm text-muted-foreground">Layout only · Auto-update on</p>
     {loading ? <p role="status">Loading pods...</p> : error ? <p role="alert">Unable to load this race. Refresh to retry.</p> : pods.length === 0 ?
       <p role="status">No pods have been added to this race.</p> :
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{pods.map(pod => <PodCard key={pod.id}

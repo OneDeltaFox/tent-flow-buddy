@@ -31,7 +31,7 @@ Run `npx tsc --project tsconfig.auth.json`, `npx vite build --config vite.auth.c
 
 ## Remaining boundaries
 
-- Refresh is explicit, and automatic after successful commands. Realtime multi-device updates are not implemented yet.
+- Visible boards automatically reload their authorized snapshot every five seconds and on focus/network return. This is polling, not Supabase Realtime push. Refresh remains available and successful commands reload immediately. Automatic reads pause during dialogs, form focus, and pointer gestures; responses arriving during interaction are discarded to preserve the displayed revision. Failed background reads mark the patient board stale and block patient writes until a successful retry. Uncertain writes still require explicit refresh. Layout-only viewers poll only `race_layout`, never patient records.
 - Pod renaming/deletion, event renaming, reset, and End Race remain unavailable in connected mode. Pod status/capability editing and section additions require migration 008 to be installed.
 - Viewers do not yet have the patient status-board projection wired into this entry.
 - No live patient data was imported. Hosted verification confirmed authenticated snapshot loading; mutation workflows were tested with mocks and the local SQL harness, not by inserting patients into the user's race.

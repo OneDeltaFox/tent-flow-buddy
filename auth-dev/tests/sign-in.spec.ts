@@ -7,6 +7,7 @@ test("requests an existing-account link without allowing signup", async ({ page 
     await route.fulfill({ json: {} });
   });
   await page.goto("/");
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
   await page.getByLabel("Email", { exact: true }).fill("tester@example.com");
   await page.getByRole("button", { name: "Send sign-in link" }).click();
   await expect(page.getByRole("status")).toContainText("Check your email");
@@ -15,6 +16,7 @@ test("requests an existing-account link without allowing signup", async ({ page 
 test("failed request keeps the form available", async ({ page }) => {
   await page.route("**/auth/v1/**", (route) => route.fulfill({ status: 429, json: { msg: "Rate limited" } }));
   await page.goto("/");
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
   await page.getByLabel("Email", { exact: true }).fill("tester@example.com");
   await page.getByRole("button", { name: "Send sign-in link" }).click();
   await expect(page.getByRole("alert")).toContainText("Unable to send");
@@ -108,7 +110,7 @@ test("shared pod tiles are read-only and never load or overwrite demo data", asy
 test("fits a phone viewport", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 667 });
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Send sign-in link" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/auth-phone.png" });
 });

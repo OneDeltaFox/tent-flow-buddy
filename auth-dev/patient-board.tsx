@@ -7,6 +7,7 @@ import type { Pod, Triage, DispositionCategory } from "@/lib/tent-data";
 import { AddPods } from "./add-pods";
 import { EditPod } from "./edit-pod";
 import { createPatientId } from "./patient-id";
+import { useAutoRefresh } from "./auto-refresh";
 
 type Visit = { id: string; revision: number; bib: string; triage: Triage; complaint: string; notes: string; source: string; eta: string;
   medical_started_at: string | null; dispositioned_at: string | null; disposition: DispositionCategory; other_disposition: string | null };
@@ -24,28 +25,45 @@ export function PatientBoard({ client, race, onBack }: {
   const lock = useRef(false);
   const alive = useRef(true);
   const createId = useRef<string | null>(null);
-  async function load() {
+  const readController = useRef<AbortController | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [syncFailed, setSyncFailed] = useState(false);
+  const canRefresh = useAutoRefresh(async () => {
+    if (!lock.current && !needsRefresh && !editingPod) await load(true);
+  });
+  async function load(background = false) {
+    if (background && readController.current) return false;
+    readController.current?.abort();
     const controller = new AbortController();
+    readController.current = controller;
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const result = await client.rpc("patient_board", { p_race: race.id }).abortSignal(controller.signal);
+      if (!alive.current || readController.current !== controller) return false;
+      if (controller.signal.aborted) throw new Error("Refresh timed out");
       if (result.error) throw result.error;
+      if (background && (lock.current || !canRefresh())) return false;
       if (alive.current) { setSnapshot(result.data); setNeedsRefresh(false); }
+      setSyncFailed(false);
+      setLastUpdated(new Date().toLocaleTimeString([], { hour12: false }));
       return true;
     } catch {
+      if (controller.signal.aborted && readController.current !== controller) return false;
+      if (background) { if (alive.current) setSyncFailed(true); return false; }
       if (alive.current) { setNeedsRefresh(true); setError("Unable to load patient records. Refresh before making changes. Database migration 007 must be installed."); }
       return false;
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); if (readController.current === controller) readController.current = null; }
   }
-  useEffect(() => { alive.current = true; void load(); return () => { alive.current = false; }; }, [client, race.id]);
+  useEffect(() => { alive.current = true; void load(); return () => { alive.current = false; readController.current?.abort(); readController.current = null; }; }, [client, race.id]);
   async function refresh() {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError("");
     try { await load(); } finally { lock.current = false; if (alive.current) setBusy(false); }
   }
   async function run(command: BoardCommand) {
-    if (lock.current || !snapshot || needsRefresh || race.state !== "active") return false;
+    if (lock.current || !snapshot || needsRefresh || syncFailed || race.state !== "active") return false;
     lock.current = true; setBusy(true); setError("");
+    readController.current?.abort(); readController.current = null;
     const ref = "ref" in command ? command.ref : undefined;
     const visitId = ref?.kind === "incoming" ? ref.incomingId : ref ? (snapshot.placements.find(p => p.bed_id === ref.bedId && !p.ended_at)?.visit_id ?? snapshot.reservations?.find(r => r.bed_id === ref.bedId)?.visit_id) : undefined;
     const visit = snapshot.visits.find(v => v.id === visitId);
@@ -97,11 +115,12 @@ export function PatientBoard({ client, race, onBack }: {
       <button aria-label="Back to races" title="Back to races" disabled={busy} onClick={onBack} className="min-h-11 border p-3"><ArrowLeft size={18} /></button>
       <button aria-label="Refresh board" title="Refresh board" disabled={busy} onClick={() => { void refresh(); }} className="min-h-11 border p-3"><RefreshCw size={18} /></button>
       {busy && <p role="status">Saving or refreshing...</p>}
+      <p role="status" className="self-center text-sm text-muted-foreground">{syncFailed ? "Updates interrupted - displayed data may be out of date. Retrying..." : lastUpdated ? `Auto-update on · Updated ${lastUpdated}` : "Connecting..."}</p>
     </div>
     {error && <p role="alert">{error}</p>}
     {snapshot?.pods.length === 0 && <p role="status">No pods have been added to this race.</p>}
     {!snapshot ? <p role="status">{error ? "Patient board unavailable." : "Loading patient board..."}</p> :
-      <div inert={busy || needsRefresh || race.state !== "active"}>
+      <div inert={busy || needsRefresh || syncFailed || race.state !== "active"}>
         <TentBoard connected={{ pods, incoming: snapshot.visits.filter(v => !v.dispositioned_at && !livePlacements.some(p => p.visit_id === v.id)).map(v => ({ id: v.id, ...details(v), source: v.source, eta: v.eta })),
           dispositions: snapshot.visits.filter(v => v.dispositioned_at).map(v => ({ id: v.id, ...details(v), category: v.disposition, time: new Date(v.dispositioned_at!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }), from: "Medical", description: v.other_disposition ?? undefined })),
           eventName: race.name, run, settings, readOnly: race.state !== "active",
