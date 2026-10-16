@@ -60,6 +60,21 @@ test('database foundation', async (t) => {
   const transition=(user,v,revision,action,destination=null,category=null,other=null)=>asUser(user,
     'select race_private.transition_visit($1,$2,$3,$4,$5,$6)',[v,revision,action,destination,category,other]);
 
+  await t.test('viewer display endpoint is member-only and strictly projected', async()=>{
+    for (const user of [owner,editor,viewer]) {
+      const s=(await asUser(user,'select public.viewer_status($1) s',[race])).rows[0].s;
+      assert.deepEqual(Object.keys(s).sort(),['beds','metrics','pods']);
+      assert.deepEqual(Object.keys(s.beds[0]).sort(),['bed_id','bib','complaint','label','medical_started_at','pod_id','pool_started_at','reserved','status','triage']);
+      assert.equal(s.metrics.incoming,2);
+      assert.ok(!JSON.stringify(s).includes('Private test note'));
+      assert.ok(!JSON.stringify(s).includes('FAKE-3'));
+    }
+    await assert.rejects(asUser(outsider,'select public.viewer_status($1)',[race]),/Access denied/);
+    await exec('set role anon');
+    await assert.rejects(query('select public.viewer_status($1)',[race]),/permission denied/);
+    await exec('reset role');
+  });
+
   await t.test('all application tables have RLS; anonymous functions are denied',async()=>{
     assert.equal((await query("select count(*)::int n from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='race_private' and c.relkind='r' and not c.relrowsecurity")).rows[0].n,0);
     await exec('set role anon');

@@ -89,21 +89,30 @@ test("shared pod tiles are read-only and never load or overwrite demo data", asy
   await page.route("**/rest/v1/rpc/my_races", route => route.fulfill({ json: [
     { id: "race", name: "Test Race", role: "viewer", state: "active" },
   ] }));
-  await page.route("**/rest/v1/rpc/race_layout", route => route.fulfill({ json: [
+  await page.route("**/rest/v1/rpc/patient_board", () => { throw new Error("Viewer must never request patient records"); });
+  await page.route("**/rest/v1/rpc/viewer_status", route => route.fulfill({ json: { pods: [
     { id: "pod", name: "Pod 1", color: "#ffcc00", kind: "regular", closed: false, capabilities: [],
       beds: [{ id: "bed", label: "1-1", status: "occupied" }] },
-  ] }));
+    { id: "ten", name: "Pod 10", color: "#ffcc00", kind: "regular", beds: [] },
+    { id: "two", name: "Pod 2", color: "#ffcc00", kind: "regular", beds: [] },
+  ], beds: [{ bed_id: "bed", bib: "VIEW-1", triage: "immediate", complaint: "Dizziness", medical_started_at: new Date(Date.now()-60000).toISOString(), pool_started_at: new Date(Date.now()-30000).toISOString() }],
+  metrics: { census: 1, incoming: 2, seen: 7, discharged: 3, ems: 2, other: 1 } } }));
   await page.goto("/");
   await page.getByRole("button", { name: "Open board" }).click();
-  await expect(page.getByText("1/1 occupied", { exact: false })).toBeVisible();
+  await expect(page.getByTestId("status-board")).toBeVisible();
+  await expect(page.getByText("#VIEW-1", { exact: true })).toBeVisible();
+  await expect(page.getByText("Dizziness", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Pool 00:/)).toBeVisible();
+  await expect(page.getByTestId("status-board").getByRole("heading", { level: 2 })).toHaveText(["Pod 1", "Pod 2", "Pod 10"]);
+  await expect(page.getByText("EMS Transport", { exact: true })).toBeVisible();
   await expect(page.getByText("Race Settings", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Edit Pod 1" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "New Patient" })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/connected-board-phone.png", fullPage: true });
-  await page.getByRole("button", { name: /^Pod 1 / }).click();
-  await expect(page.getByRole("dialog")).toContainText("occupied");
-  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: /Edit patient/ })).toHaveCount(0);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.screenshot({ path: "test-results/viewer-status-desktop.png", fullPage: true });
   expect(await page.evaluate(() => localStorage.getItem("tent-board-pods-v3"))).toBe("demo-sentinel");
 });
 

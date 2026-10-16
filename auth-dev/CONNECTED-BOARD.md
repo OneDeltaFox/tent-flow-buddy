@@ -29,6 +29,12 @@ The connected development board supports reservations. The browser-local public 
 
 Run `npx tsc --project tsconfig.auth.json`, `npx vite build --config vite.auth.config.ts`, `npm run build:pages`, and `npx playwright test --config playwright.auth.config.ts`. Database tests run with `node --test tests/foundation.test.mjs` from `database/`. They use a disposable local database, not hosted patient data.
 
+## Viewer Display Update
+
+Migration 010 was installed manually in development on October 16, 2026. It supersedes the layout-only Viewer behavior described above: Viewers now open the shared StatusBoard using only `public.viewer_status`. The endpoint explicitly projects assigned race numbers, complaints, triage, medical/pool start times and reservation flags, with aggregate census, incoming, seen and disposition counts. Notes, source, ETA and discharged-patient details are excluded. No write access is added. Pods and beds use numeric display sorting without renumbering records. Failed Viewer reads clear the display and retry automatically.
+
+Validation: 18 browser tests passed; local database suite passed 18 tests with the real concurrent-client test skipped. TypeScript and auth build passed. Desktop and phone screenshots checked. The connected Viewer still needs a real-device acceptance check after reloading the browser.
+
 ## Remaining boundaries
 
 - Visible boards automatically reload their authorized snapshot every five seconds and on focus/network return. This is polling, not Supabase Realtime push. Refresh remains available and successful commands reload immediately. Automatic reads pause during dialogs, form focus, and pointer gestures; responses arriving during interaction are discarded to preserve the displayed revision. Failed background reads mark the patient board stale and block patient writes until a successful retry. Uncertain writes still require explicit refresh. Layout-only viewers poll only `race_layout`, never patient records.

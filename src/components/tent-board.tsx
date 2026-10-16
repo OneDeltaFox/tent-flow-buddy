@@ -1589,6 +1589,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
         pods={pods}
         eventName={eventName}
         incomingCount={incomingQueue.length}
+        metrics={{ census: totals.currentCensus, seen: totals.seenToday, discharged: dispositions.filter(d => d.category === "discharged").length, ems: dispositions.filter(d => d.category === "ems").length, other: dispositions.filter(d => d.category === "other").length }}
         bedTone={bedTileTone}
         onClose={() => setStatusView(false)}
       />

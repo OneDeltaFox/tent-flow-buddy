@@ -1,89 +1,75 @@
 import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ArrowLeft, RefreshCw, Settings } from "lucide-react";
-import { AddPods } from "./add-pods";
+import { ArrowLeft, RefreshCw } from "lucide-react";
+import { StatusBoard } from "@/components/status-board";
+import type { Bed, Pod, Triage } from "@/lib/tent-data";
 import { useAutoRefresh } from "./auto-refresh";
-import { PodCard } from "@/components/tent-board";
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
-type Pod = { id: string; name: string; color: string; kind: "regular" | "pool"; closed: boolean; capabilities: string[];
-  beds: { id: string; label: string; status: "open" | "occupied" | "cleaning" }[] };
-const tones = {
-  open: "border-status-open text-status-open bg-status-open/15",
-  occupied: "border-status-occupied text-status-occupied bg-status-occupied/15",
-  cleaning: "border-status-cleaning text-muted-foreground bg-status-cleaning/15",
-};
+type DisplayBed = { bed_id: string; bib: string | null; triage: Triage | null; complaint: string | null;
+  medical_started_at: string | null; pool_started_at: string | null; reserved: boolean };
+type Snapshot = { pods: Pod[]; beds: DisplayBed[]; metrics: { census: number; incoming: number; seen: number; discharged: number; ems: number; other: number } };
+function tone(bed: Bed) {
+  if (bed.status === "cleaning") return "bg-status-cleaning/40 border-status-cleaning text-muted-foreground";
+  if (bed.status === "open") return "bg-status-open/15 border-status-open/50 text-status-open";
+  switch (bed.triage) {
+    case "immediate": return "bg-status-critical border-status-critical text-foreground";
+    case "delayed": return "bg-status-occupied border-status-occupied text-background";
+    case "minor": return "bg-status-open border-status-open text-background";
+    default: return "bg-muted border-muted-foreground text-foreground";
+  }
+}
 
 export function RaceLayout({ client, race, onBack }: {
   client: SupabaseClient; race: { id: string; name: string; role: string; state: string }; onBack: () => void;
 }) {
-  const [pods, setPods] = useState<Pod[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [updated, setUpdated] = useState("");
   const autoLoad = useRef<() => Promise<void>>(async () => {});
   const canRefresh = useAutoRefresh(() => autoLoad.current());
-  const selected = pods.find(pod => pod.id === selectedId);
-  const activeBeds = pods.filter(pod => !pod.closed).flatMap(pod => pod.beds);
-  const occupied = pods.flatMap(pod => pod.beds).filter(bed => bed.status === "occupied").length;
   useEffect(() => {
     let active = true;
     let controller: AbortController | null = null;
-    setPods([]); setSelectedId(null); setLoading(true); setError(false);
+    setSnapshot(null); setError(false); setUpdated("");
     async function load(background = false) {
       if (controller) return;
       const request = new AbortController();
       controller = request;
       const timeout = window.setTimeout(() => request.abort(), 15000);
       try {
-        const result = await client.rpc("race_layout", { p_race: race.id }).abortSignal(request.signal);
+        const result = await client.rpc("viewer_status", { p_race: race.id }).abortSignal(request.signal);
         if (!active) return;
-        if (result.error) setError(true);
-        else if (!background || canRefresh()) { setPods(result.data ?? []); setError(false); }
-      } catch { if (active) setError(true); }
-      finally { window.clearTimeout(timeout); controller = null; if (active) setLoading(false); }
+        if (result.error || !result.data) {
+          setError(true);
+          // Clear patient information when authorization is lost or cannot be verified.
+          setSnapshot(null);
+        } else if (!background || canRefresh()) {
+          setSnapshot(result.data); setError(false);
+          setUpdated(new Date().toLocaleTimeString("en-GB"));
+        }
+      } catch { if (active) { setError(true); setSnapshot(null); } }
+      finally { window.clearTimeout(timeout); controller = null; }
     }
     autoLoad.current = () => load(true);
     void load();
     return () => { active = false; controller?.abort(); autoLoad.current = async () => {}; };
   }, [client, race.id, attempt]);
-  return <section aria-label="Race layout" className="grid gap-4">
-    <div className="flex items-center gap-3">
-      <button type="button" onClick={onBack} aria-label="Back to races" title="Back to races" className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-border"><ArrowLeft size={20} /></button>
-      <h3 className="min-w-0 flex-1 break-words text-xl font-semibold">{race.name}</h3>
-      <button type="button" disabled={loading} onClick={() => setAttempt(v => v + 1)} aria-label="Refresh layout" title="Refresh layout" className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-border disabled:opacity-50"><RefreshCw size={20} /></button>
+  const poolStarts: Record<string, number> = {};
+  const pods = snapshot?.pods.map(pod => ({ ...pod, zone: "", staff: [], beds: pod.beds.map(bed => {
+    const display = snapshot.beds.find(row => row.bed_id === bed.id);
+    if (display?.pool_started_at) poolStarts[bed.id] = Date.parse(display.pool_started_at);
+    return { ...bed, label: bed.label.replace(/^pod\s+(\d+)-(\d+)$/i, "$1-$2"),
+      ...(display?.bib ? { bib: display.bib, triage: display.triage ?? "untriaged", complaint: display.complaint ?? "", reserved: display.reserved,
+        arrivedAt: display.medical_started_at ? Date.parse(display.medical_started_at) : undefined } : {}) };
+  }) })) ?? [];
+  return <section aria-label="Viewer status board">
+    <div className="flex flex-wrap items-center gap-3 p-3">
+      {!snapshot && <button onClick={onBack} aria-label="Back to races" title="Back to races" className="size-11 border p-3"><ArrowLeft size={18} /></button>}
+      <button onClick={() => setAttempt(v => v + 1)} aria-label="Refresh status board" title="Refresh status board" className="size-11 border p-3"><RefreshCw size={18} /></button>
+      {error ? <p role="alert">Status board unavailable. Retrying automatically. Migration 010 and race access are required.</p> : <p role="status" className="text-sm text-muted-foreground">{updated ? `Auto-update on · Updated ${updated}` : "Loading status board..."}</p>}
     </div>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
-      <div className="flex gap-6 font-mono">
-        <div><p className="text-xs text-muted-foreground">Occupied beds</p><p className="text-3xl font-bold">{loading || error ? "--" : occupied}</p></div>
-        <div><p className="text-xs text-muted-foreground">Open beds</p><p className="text-3xl font-bold text-status-open">{loading || error ? "--" : `${activeBeds.filter(bed => bed.status === "open").length} / ${activeBeds.length}`}</p></div>
-      </div>
-      {race.role === "owner" && race.state === "active" && <details className="relative">
-        <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded border border-border px-3"><Settings size={16} />Race Settings</summary>
-        <div className="absolute right-0 top-full z-20 w-64 rounded border border-border bg-card p-3 shadow-xl">
-          <AddPods client={client} raceId={race.id} onSaved={() => setAttempt(v => v + 1)} />
-        </div>
-      </details>}
-    </div>
-    <p className="text-sm text-muted-foreground">Layout only · Auto-update on</p>
-    {loading ? <p role="status">Loading pods...</p> : error ? <p role="alert">Unable to load this race. Refresh to retry.</p> : pods.length === 0 ?
-      <p role="status">No pods have been added to this race.</p> :
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{pods.map(pod => <PodCard key={pod.id}
-        pod={{ ...pod, zone: pod.kind === "pool" ? "Pool" : "", staff: [] }}
-        selected={pod.id === selectedId} setup={false} readOnly
-        onSelect={() => setSelectedId(pod.id)} onEdit={() => {}} onEditPatient={() => {}}
-      />)}</div>}
-    <Dialog open={Boolean(selected)} onOpenChange={open => { if (!open) setSelectedId(null); }}>
-      {selected && <DialogContent className="board-modal" style={{ borderLeftColor: selected.color, borderLeftWidth: 5 }}>
-        <DialogTitle>{selected.name}</DialogTitle>
-        <DialogDescription>{selected.closed ? "Closed" : "Open"}{selected.kind === "pool" ? " · Pool" : ""}</DialogDescription>
-        <p className="break-words text-sm text-muted-foreground">{selected.capabilities.join(", ")}</p>
-        <div className="grid grid-cols-2 gap-2">{selected.beds.map(bed => <div key={bed.id} className={`min-w-0 rounded border p-3 ${tones[bed.status]}`}>
-          <p className="break-words font-semibold">{bed.label}</p>
-          <p className="text-sm capitalize">{selected.closed && bed.status === "open" ? "Unavailable" : bed.status === "cleaning" ? "Turnover" : bed.status}</p>
-        </div>)}</div>
-      </DialogContent>}
-    </Dialog>
+    {snapshot && <StatusBoard pods={pods} eventName={race.name} incomingCount={snapshot.metrics.incoming}
+      metrics={snapshot.metrics} poolStartedAt={poolStarts} bedTone={tone} onClose={onBack} backLabel="Back to races" />}
   </section>;
 }
