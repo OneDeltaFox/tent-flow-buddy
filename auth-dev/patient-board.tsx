@@ -6,6 +6,7 @@ import type { BoardCommand } from "@/lib/connected-board";
 import type { Pod, Triage, DispositionCategory } from "@/lib/tent-data";
 import { AddPods } from "./add-pods";
 import { EditPod } from "./edit-pod";
+import { createPatientId } from "./patient-id";
 
 type Visit = { id: string; revision: number; bib: string; triage: Triage; complaint: string; notes: string; source: string; eta: string;
   medical_started_at: string | null; dispositioned_at: string | null; disposition: DispositionCategory; other_disposition: string | null };
@@ -54,7 +55,7 @@ export function PatientBoard({ client, race, onBack }: {
       if (ref && !visit) throw new Error("Patient no longer available");
       let result;
       if (command.action === "save") {
-        if (!visit && !createId.current) createId.current = crypto.randomUUID();
+        if (!visit && !createId.current) createId.current = createPatientId();
         result = await client.rpc("save_patient", { p_race: race.id, p_visit: visit?.id ?? createId.current, p_revision: visit?.revision ?? null,
           p_details: { bib: command.details.bib, triage: command.details.triage, complaint: command.details.complaint ?? "", notes: command.details.operationalStatus ?? "",
             ...(command.details.source !== undefined ? { source: command.details.source } : {}), ...(command.details.eta !== undefined ? { eta: command.details.eta } : {}) }, p_bed: command.bed ?? null }).abortSignal(controller.signal);

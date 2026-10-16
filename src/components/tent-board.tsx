@@ -1632,7 +1632,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
             <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
               <div className="min-w-0">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Medical Tent 1 - Charge Board
+                  TriageDesk - Charge Board
                 </div>
                 <input
                   value={eventName}

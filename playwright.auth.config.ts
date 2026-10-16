@@ -9,6 +9,7 @@ export default defineConfig({
     env: {
       VITE_SUPABASE_URL: "https://authtest.supabase.co",
       VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test_not_a_real_key",
+      VITE_GOOGLE_AUTH_ENABLED: "false",
     },
     reuseExistingServer: false,
   },
