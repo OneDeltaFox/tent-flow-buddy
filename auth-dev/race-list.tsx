@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { RefreshCw } from "lucide-react";
 import { RaceLayout } from "./race-layout";
 import { PatientBoard } from "./patient-board";
+import { Invitations } from "./invitations";
 
 type Race = { id: string; name: string; timezone: string; state: string; role: string };
 
@@ -52,5 +53,6 @@ export function RaceList({ client }: { client: SupabaseClient }) {
           <p className="text-sm text-muted-foreground">{race.timezone}</p>
           <button type="button" onClick={() => setSelected(race)} className="mt-3 min-h-12 rounded border border-border px-4 py-2">Open board</button>
         </li>)}</ul>}
+    <Invitations client={client} onAccepted={() => setAttempt(value => value + 1)} />
   </div>;
 }

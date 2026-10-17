@@ -23,7 +23,7 @@ test('database foundation', async (t) => {
   assert.equal((await query("select 1 from pg_namespace where nspname in ('race_private','auth')")).rows.length,0);
   await exec(`create role authenticated nologin; create role anon nologin;
     create schema auth;
-    create table auth.users(id uuid primary key, email text);
+    create table auth.users(id uuid primary key, email text, email_confirmed_at timestamptz);
     create function auth.uid() returns uuid language sql stable as
       $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema auth to authenticated;
@@ -59,6 +59,39 @@ test('database foundation', async (t) => {
   }
   const transition=(user,v,revision,action,destination=null,category=null,other=null)=>asUser(user,
     'select race_private.transition_visit($1,$2,$3,$4,$5,$6)',[v,revision,action,destination,category,other]);
+
+  await t.test('invitations require verified matching email and preserve existing access', async()=>{
+    const invited=id(501), wrong=id(502);
+    await query('insert into auth.users(id,email) values ($1,$2),($3,$4)',[invited,'invite@example.test',wrong,'wrong@example.test']);
+    for (const user of [editor,viewer,outsider]) await assert.rejects(asUser(user,'select public.create_race_invitation($1,$2,$3)',[race,'invite@example.test','editor']),/Access denied/);
+    await assert.rejects(asUser(owner,'select public.create_race_invitation($1,$2,$3)',[race,'invite@example.test','owner']),/Invalid role/);
+    const create=async()=> (await asUser(owner,'select public.create_race_invitation($1,$2,$3) id',[race,' INVITE@example.test ','editor'])).rows[0].id;
+    const first=await create();
+    await assert.rejects(create(),/duplicate key/);
+    assert.deepEqual((await asUser(invited,'select public.my_race_invitations() i')).rows[0].i,[]);
+    await assert.rejects(asUser(invited,'select public.accept_race_invitation($1)',[first]),/Verified email/);
+    await query('update auth.users set email_confirmed_at=now() where id in ($1,$2)',[invited,wrong]);
+    await assert.rejects(asUser(wrong,'select public.accept_race_invitation($1)',[first]),/unavailable/);
+    await assert.rejects(asUser(editor,'select public.cancel_race_invitation($1,$2)',[race,first]),/Access denied/);
+    await asUser(owner,'select public.cancel_race_invitation($1,$2)',[race,first]);
+    await assert.rejects(asUser(invited,'select public.accept_race_invitation($1)',[first]),/unavailable/);
+    const expired=await create();
+    await query("update race_private.invitations set expires_at=now()-interval '1 second' where id=$1",[expired]);
+    await assert.rejects(asUser(invited,'select public.accept_race_invitation($1)',[expired]),/unavailable/);
+    const last=await create();
+    assert.equal((await asUser(invited,'select public.my_race_invitations() i')).rows[0].i.length,1);
+    await asUser(invited,'select public.accept_race_invitation($1)',[last]);
+    assert.equal((await query('select role from race_private.memberships where race_id=$1 and user_id=$2',[race,invited])).rows[0].role,'editor');
+    await assert.rejects(asUser(invited,'select public.accept_race_invitation($1)',[last]),/unavailable/);
+    await assert.rejects(create(),/already has access/);
+    await assert.rejects(asUser(viewer,'select public.race_invitations($1)',[race]),/Access denied/);
+    await exec('set role anon');
+    await assert.rejects(query('select public.my_race_invitations()'),/permission denied/);
+    await exec('reset role');
+    // Isolate this fixture from the existing team audit-count assertions.
+    await query('delete from race_private.team_events where user_id=$1',[invited]);
+    await query('delete from race_private.memberships where user_id=$1',[invited]);
+  });
 
   await t.test('viewer display endpoint is member-only and strictly projected', async()=>{
     for (const user of [owner,editor,viewer]) {

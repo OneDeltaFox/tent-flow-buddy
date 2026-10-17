@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 
 test("owner confirms additions, role changes and removals; uncertain saves require refresh", async ({page}) => {
+  await page.route("**/rest/v1/rpc/race_invitations",r=>r.fulfill({json:[]}));
+  await page.route("**/rest/v1/rpc/my_race_invitations",r=>r.fulfill({json:[]}));
   await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth",JSON.stringify({access_token:"token",refresh_token:"refresh",token_type:"bearer",expires_at:Math.floor(Date.now()/1000)+3600,user:{id:"owner"}})));
   await page.route("**/rest/v1/rpc/my_races",r=>r.fulfill({json:[{id:"race",name:"Team Test",role:"owner",state:"active"}]}));
   await page.route("**/rest/v1/rpc/patient_board",r=>r.fulfill({json:{pods:[],visits:[],placements:[],turnovers:[]}}));
