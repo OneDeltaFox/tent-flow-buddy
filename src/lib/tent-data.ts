@@ -3,6 +3,8 @@ export type BedStatus = "open" | "occupied" | "cleaning";
 export type Triage = "untriaged" | "immediate" | "delayed" | "minor";
 
 export type Bed = {
+  visitId?: string;
+  reserved?: boolean;
   id: string;
   label: string;
   status: BedStatus;
@@ -16,6 +18,7 @@ export type Bed = {
 
 export type Pod = {
   id: string;
+  kind?: "regular" | "pool";
   number?: number;
   name: string;
   zone: string;
@@ -26,6 +29,10 @@ export type Pod = {
   staff: string[];
   beds: Bed[];
 };
+
+export function isPoolPod(pod: Pod): boolean {
+  return pod.kind ? pod.kind === "pool" : /^pool(?:\s|$)/i.test(pod.name.trim());
+}
 
 export type Incoming = {
   id: string;

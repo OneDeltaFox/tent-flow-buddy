@@ -361,6 +361,8 @@ test("disposition drop preserves cleaning and ready workflow", async ({ page, is
       () => JSON.parse(localStorage.getItem("tent-board-dispositions-v1")!)[0].bib,
     ),
   ).toBe("A100");
+  // Avoid the drag sensor's temporary suppression of synthetic follow-up clicks.
+  await page.waitForTimeout(600);
   await page.getByRole("button", { name: /^Pod A 0\/4/ }).click();
   await page.getByRole("button", { name: "1-1 ready", exact: true }).click();
   expect((await savedPods(page))[0].beds[0].status).toBe("open");

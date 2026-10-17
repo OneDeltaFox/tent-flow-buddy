@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Maximize } from "lucide-react";
 import type { Bed, Pod } from "@/lib/tent-data";
+import { isPoolPod } from "@/lib/tent-data";
 
 function elapsedTime(arrivedAt: number | undefined, now: number): string {
   if (arrivedAt === undefined || !Number.isFinite(arrivedAt) || arrivedAt > now) return "--:--";
@@ -16,12 +17,18 @@ export function StatusBoard({
   incomingCount,
   bedTone,
   onClose,
+  metrics,
+  poolStartedAt = {},
+  backLabel = "Back to working board",
 }: {
   pods: Pod[];
   eventName: string;
   incomingCount: number;
   bedTone: (bed: Bed) => string;
   onClose: () => void;
+  metrics?: { census: number; seen: number; discharged: number; ems: number; other: number };
+  poolStartedAt?: Record<string, number>;
+  backLabel?: string;
 }) {
   const [now, setNow] = useState(Date.now);
   const [fullscreenError, setFullscreenError] = useState("");
@@ -30,13 +37,19 @@ export function StatusBoard({
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const beds = pods.flatMap((pod) => pod.beds);
+  const regularPods = pods.filter((pod) => !isPoolPod(pod));
+  const poolPods = pods.filter(isPoolPod);
+  const poolSpaces = poolPods.flatMap((pod) => pod.beds);
+  const occupiedPools = poolSpaces.filter((bed) => bed.bib).length;
+  const availablePools = poolPods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
+  const openPools = availablePools.filter((bed) => bed.status === "open").length;
+  const beds = regularPods.flatMap((pod) => pod.beds);
   const occupied = beds.filter((bed) => bed.bib).length;
-  const availablePods = pods.filter((pod) => !pod.closed);
+  const availablePods = regularPods.filter((pod) => !pod.closed);
   const open = availablePods
     .flatMap((pod) => pod.beds)
     .filter((bed) => bed.status === "open").length;
-  const capacity = pods.reduce(
+  const capacity = regularPods.reduce(
     (total, pod) =>
       total + (pod.closed ? pod.beds.filter((bed) => bed.bib).length : pod.beds.length),
     0,
@@ -55,11 +68,15 @@ export function StatusBoard({
         </div>
         <dl className="flex flex-wrap gap-5 font-mono">
           {[
-            ["Occupied", occupied],
-            ["Open", open],
-            ["Capacity", capacity],
-            ["Saturation", `${saturation}%`],
+            ["Census", metrics?.census ?? pods.flatMap(pod => pod.beds).filter(bed => bed.bib && !bed.reserved).length],
+            ["Occupied beds", occupied],
+            ["Open beds", open],
+            ["Bed capacity", capacity],
+            ["Bed saturation", `${saturation}%`],
+            ["Occupied pools", occupiedPools],
+            ["Open pools", `${openPools} / ${availablePools.length}`],
             ["Incoming", incomingCount],
+            ...(metrics ? [["Seen today", metrics.seen], ["Discharged", metrics.discharged], ["EMS Transport", metrics.ems], ["Other", metrics.other]] : []),
           ].map(([label, value]) => (
             <div key={label}>
               <dt className="text-base text-muted-foreground">{label}</dt>
@@ -94,8 +111,8 @@ export function StatusBoard({
           </button>
           <button
             type="button"
-            title="Back to working board"
-            aria-label="Back to working board"
+            title={backLabel}
+            aria-label={backLabel}
             className="flex size-11 items-center justify-center rounded-sm border border-border"
             onClick={onClose}
           >
@@ -109,7 +126,7 @@ export function StatusBoard({
         </p>
       )}
       <main className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-4">
-        {pods.map((pod) => (
+        {[...pods].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })).map((pod) => (
           <section
             key={pod.id}
             className="min-w-0 rounded-md border-2 border-t-4 bg-card p-2 sm:p-3"
@@ -124,10 +141,10 @@ export function StatusBoard({
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              {pod.beds.map((bed) => (
+              {[...pod.beds].sort((a,b) => a.label.localeCompare(b.label, undefined, { numeric: true })).map((bed) => (
                 <div key={bed.id} className="min-w-0">
                   <div
-                    className={`flex h-16 min-w-0 items-center justify-center rounded-sm border px-1 text-center font-mono text-2xl font-bold ${bedTone(bed)}`}
+                    className={`flex h-16 min-w-0 flex-col items-center justify-center rounded-sm border px-1 text-center font-mono text-2xl font-bold ${bedTone(bed)}`}
                     title={bed.bib ? `Race #${bed.bib}, bed ${bed.label}` : bed.label}
                   >
                     <span className="truncate">
@@ -139,7 +156,9 @@ export function StatusBoard({
                             ? "Closed"
                             : bed.label}
                     </span>
+                    {bed.reserved && <span className="text-base">In pool</span>}
                   </div>
+                  {bed.bib && <p className="min-h-12 break-words text-center text-lg font-semibold">{bed.complaint}</p>}
                   <div
                     className="h-8 text-center font-mono text-lg font-semibold leading-8 tabular-nums"
                     title={
@@ -150,6 +169,7 @@ export function StatusBoard({
                   >
                     {bed.bib ? elapsedTime(bed.arrivedAt, now) : ""}
                   </div>
+                  {bed.bib && poolStartedAt[bed.id] !== undefined && <p className="text-center font-mono text-lg font-semibold">Pool {elapsedTime(poolStartedAt[bed.id], now)}</p>}
                 </div>
               ))}
             </div>

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Monitor, Pencil, Settings, Trash2, X } from "lucide-react";
+import type { ConnectedBoard } from "@/lib/connected-board";
 import { StatusBoard } from "@/components/status-board";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PatientMovement, PatientSurface, PatientDropTarget } from "@/components/patient-movement";
@@ -20,6 +21,7 @@ import {
   initialDispositions,
   initialIncoming,
   initialPods,
+  isPoolPod,
   numberPodBeds,
 } from "@/lib/tent-data";
 
@@ -288,8 +290,8 @@ function dispositionRecord(
 }
 
 function bedTileTone(bed: Bed) {
-  if (bed.status === "occupied" && bed.triage) {
-    return triageBedTile[bed.triage];
+  if (bed.status === "occupied") {
+    return triageBedTile[bed.triage ?? "untriaged"];
   }
 
   return statusTile[bed.status];
@@ -311,7 +313,7 @@ function BedTile({
   return (
     <PatientDropTarget
       target={
-        !disabled && bed.status === "open" ? { kind: "bed", podId, bedId: bed.id } : undefined
+        !disabled && (bed.status === "open" || bed.reserved) ? { kind: "bed", podId, bedId: bed.id } : undefined
       }
       className="min-w-0 rounded-sm"
     >
@@ -327,6 +329,7 @@ function BedTile({
         >
           {bed.bib ?? (bed.status === "cleaning" ? "CLR" : bed.label)}
         </span>
+        {bed.reserved && <span className="text-xs font-bold">In pool</span>}
         {bed.bib && bed.complaint && (
           <span
             title={bed.complaint}
@@ -462,17 +465,21 @@ function podCounts(pod: Pod) {
   };
 }
 
-function PodCard({
+export function PodCard({
   pod,
   selected,
   setup,
   onSelect,
   onEdit,
   onEditPatient,
+  readOnly = false,
+  layoutLocked = false,
 }: {
   pod: Pod;
   selected: boolean;
   setup: boolean;
+  readOnly?: boolean;
+  layoutLocked?: boolean;
   onSelect: () => void;
   onEdit: () => void;
   onEditPatient: (podId: string, bed: Bed) => void;
@@ -494,10 +501,10 @@ function PodCard({
           <p className="text-[10px] text-muted-foreground">
             {pod.closed
               ? "Closed"
-              : `${total - pod.beds.filter((bed) => !bed.bib).length}/${total} occupied · ${open} open`}
+              : `${pod.beds.filter((bed) => bed.status === "occupied").length}/${total} occupied · ${open} open`}
           </p>
         </button>
-        <button
+        {!readOnly && !layoutLocked && <button
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${pod.name}`}
@@ -505,7 +512,7 @@ function PodCard({
           className="flex size-11 shrink-0 items-center justify-center rounded-sm bg-signal text-background"
         >
           <Pencil size={16} />
-        </button>
+        </button>}
       </div>
       <div
         className={`grid gap-1.5 ${pod.beds.length === 1 ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-4"}`}
@@ -515,9 +522,9 @@ function PodCard({
             key={bed.id}
             bed={bed}
             podId={pod.id}
-            disabled={setup || (!!pod.closed && !bed.bib)}
+            disabled={readOnly || setup || (!!pod.closed && !bed.bib)}
             className={pod.closed && !bed.bib ? "opacity-35" : ""}
-            onEdit={!setup && bed.bib ? () => onEditPatient(pod.id, bed) : undefined}
+            onEdit={!readOnly && !setup && bed.bib ? () => onEditPatient(pod.id, bed) : undefined}
           />
         ))}
       </div>
@@ -800,7 +807,7 @@ function PodDetail({
               key={bed.id}
               patient={patientFromBed(bed)}
               dispositionSource={{ kind: "bed", podId: pod.id, bedId: bed.id }}
-              locationLabel={`${bed.label} - in ${bed.since ?? "--:--"}`}
+              locationLabel={bed.reserved ? `${bed.label} - In pool` : `${bed.label} - in ${bed.since ?? "--:--"}`}
               onEdit={() => onEditPatient(pod.id, bed)}
             />
           ))}
@@ -894,19 +901,19 @@ function nextPodId(pods: Pod[]): string {
   return letters.find((letter) => !used.has(letter)) ?? `P${pods.length + 1}`;
 }
 
-export function TentBoard() {
+export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
   const [selectedPod, setSelectedPod] = useState<string | null>(null);
   const [setup, setSetup] = useState(false);
-  const [pods, setPods] = useState<Pod[]>(initialPods);
-  const [incomingQueue, setIncomingQueue] = useState<Incoming[]>(initialIncoming);
-  const [dispositions, setDispositions] = useState<Disposition[]>(initialDispositions);
+  const [pods, setPods] = useState<Pod[]>(connected?.pods ?? initialPods);
+  const [incomingQueue, setIncomingQueue] = useState<Incoming[]>(connected?.incoming ?? initialIncoming);
+  const [dispositions, setDispositions] = useState<Disposition[]>(connected?.dispositions ?? initialDispositions);
   const [pendingDisposition, setPendingDisposition] = useState<{
     ref: PatientRef;
     bib: string;
     category: DispositionCategory;
   } | null>(null);
   const [dispositionDescription, setDispositionDescription] = useState("");
-  const [eventName, setEventName] = useState(DEFAULT_EVENT_NAME);
+  const [eventName, setEventName] = useState(connected?.eventName ?? DEFAULT_EVENT_NAME);
   const [currentClock, setCurrentClock] = useState("--:--");
   const [statusView, setStatusView] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -943,6 +950,13 @@ export function TentBoard() {
   const [layoutMessage, setLayoutMessage] = useState("");
 
   useEffect(() => {
+    if (connected) {
+      setPods(connected.pods);
+      setIncomingQueue(connected.incoming);
+      setDispositions(connected.dispositions);
+      setEventName(connected.eventName);
+      return;
+    }
     setPods(normalizeStoredPods(loadStoredArray(PODS_STORAGE_KEY, initialPods)));
     setIncomingQueue(
       normalizeStoredIncoming(loadStoredArray(INCOMING_STORAGE_KEY, initialIncoming)),
@@ -952,15 +966,15 @@ export function TentBoard() {
     );
     setEventName(loadStoredText(EVENT_NAME_STORAGE_KEY, DEFAULT_EVENT_NAME));
     setHydrated(true);
-  }, []);
+  }, [connected]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (connected || !hydrated) return;
     localStorage.setItem(PODS_STORAGE_KEY, JSON.stringify(pods));
     localStorage.setItem(INCOMING_STORAGE_KEY, JSON.stringify(incomingQueue));
     localStorage.setItem(DISPOSITION_STORAGE_KEY, JSON.stringify(dispositions));
     localStorage.setItem(EVENT_NAME_STORAGE_KEY, eventName);
-  }, [dispositions, eventName, hydrated, incomingQueue, pods]);
+  }, [connected, dispositions, eventName, hydrated, incomingQueue, pods]);
 
   useEffect(() => {
     setCurrentClock(formatBoardTime());
@@ -970,13 +984,19 @@ export function TentBoard() {
 
   const totals = useMemo(() => {
     const all = pods.flatMap((pod) => pod.beds);
-    const activeBeds = pods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
-    const currentCensus = all.filter((bed) => bed.bib).length;
-    const occupiedBeds = all.filter((bed) => bed.status === "occupied").length;
+    const regularPods = pods.filter((pod) => !isPoolPod(pod));
+    const poolPods = pods.filter(isPoolPod);
+    const activePools = poolPods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
+    const activeBeds = regularPods.filter((pod) => !pod.closed).flatMap((pod) => pod.beds);
+    const currentCensus = all.filter((bed) => bed.bib && !bed.reserved).length;
+    const occupiedBeds = regularPods.flatMap((pod) => pod.beds).filter((bed) => bed.status === "occupied").length;
 
     return {
       currentCensus,
       occupiedBeds,
+      occupiedPools: poolPods.flatMap((pod) => pod.beds).filter((bed) => bed.status === "occupied").length,
+      openPools: activePools.filter((bed) => bed.status === "open").length,
+      totalPools: activePools.length,
       open: activeBeds.filter((bed) => bed.status === "open").length,
       totalBeds: activeBeds.length,
       incoming: incomingQueue.length,
@@ -1092,7 +1112,7 @@ export function TentBoard() {
     setNewPatientAssignPod("");
   };
 
-  const addIncomingPatient = (e: React.FormEvent) => {
+  const addIncomingPatient = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const bib = newPatientBib.trim();
@@ -1110,6 +1130,14 @@ export function TentBoard() {
       eta: newPatientEta.trim() || undefined,
     };
 
+    if (connected) {
+      const target = pods.find(pod => pod.id === newPatientAssignPod && !pod.closed)?.beds.find(bed => bed.status === "open");
+      if (newPatientAssignPod && !target) { setNewPatientMessage("Selected pod has no available bed. Refresh and choose again."); return; }
+      if (await connected.run({ action: "save", details: patient, ...(target ? { bed: target.id } : {}) })) {
+        resetPatientForm(); setAddingPatient(false);
+      } else setNewPatientMessage("Save not confirmed. Close this window, refresh the board, and check before retrying.");
+      return;
+    }
     if (newPatientAssignPod) {
       const targetPod = pods.find((pod) => pod.id === newPatientAssignPod);
       const targetBed = targetPod?.closed
@@ -1173,6 +1201,14 @@ export function TentBoard() {
   };
 
   const startPatientEdit = (podId: string, bed: Bed) => {
+    if (!bed.bib) return;
+    if (bed.reserved) {
+      const actualPod = pods.find(pod => pod.beds.some(b => b.visitId === bed.visitId && !b.reserved));
+      const actualBed = actualPod?.beds.find(b => b.visitId === bed.visitId && !b.reserved);
+      if (!actualPod || !actualBed) return;
+      podId = actualPod.id;
+      bed = actualBed;
+    }
     if (!bed.bib) return;
     const complaint = complaintSelectionFor(bed.complaint);
     setEditPatient({ kind: "bed", podId, bedId: bed.id });
@@ -1239,7 +1275,7 @@ export function TentBoard() {
     setAddingPatient(false);
   };
 
-  const savePatientEdit = (e: React.FormEvent) => {
+  const savePatientEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editPatient) return;
 
@@ -1251,6 +1287,16 @@ export function TentBoard() {
       operationalStatus: editPatientStatus.trim() || undefined,
     };
 
+    if (connected) {
+      const moving = editPatientPod && (editPatient.kind === "incoming" || editPatientPod !== editPatient.podId);
+      const currentVisit = editPatient.kind === "bed" ? pods.flatMap(p => p.beds).find(b => b.id === editPatient.bedId)?.visitId : undefined;
+      const targetPod = moving ? pods.find(pod => pod.id === editPatientPod && !pod.closed) : undefined;
+      const target = targetPod?.beds.find(bed => bed.reserved && bed.visitId === currentVisit) ?? targetPod?.beds.find(bed => bed.status === "open");
+      if (moving && !target) { setEditPatientMessage("Selected pod has no available bed. Refresh and choose again."); return; }
+      if (await connected.run({ action: "save", ref: editPatient, details: updated, ...(target ? { bed: target.id } : {}) })) finishPatientEdit();
+      else setEditPatientMessage("Save not confirmed. Close this window, refresh the board, and check before retrying.");
+      return;
+    }
     if (editPatient.kind === "incoming") {
       const currentPatient = incomingQueue.find((patient) => patient.id === editPatient.incomingId);
       if (!currentPatient) return;
@@ -1404,6 +1450,7 @@ export function TentBoard() {
   };
 
   const handleBedDrop = (targetPodId: string, targetBedId: string, ref: PatientRef) => {
+    if (connected) { void connected.run({ action: "move", ref, bed: targetBedId }); return; }
     const targetPod = pods.find((pod) => pod.id === targetPodId);
     const targetBed = targetPod?.beds.find((bed) => bed.id === targetBedId);
     if (!targetPod || targetPod.closed || targetBed?.status !== "open") return;
@@ -1472,6 +1519,7 @@ export function TentBoard() {
     ref: PatientRef,
     description?: string,
   ) => {
+    if (connected) { void connected.run({ action: "disposition", ref, category, description }); return; }
     if (ref.kind === "incoming") {
       const patient = incomingQueue.find((item) => item.id === ref.incomingId);
       if (!patient) return;
@@ -1513,6 +1561,7 @@ export function TentBoard() {
   };
 
   const clearTurnoverBed = (podId: string, bedId: string) => {
+    if (connected) { void connected.run({ action: "ready", bed: bedId }); return; }
     setPods((prev) =>
       prev.map((pod) => ({
         ...pod,
@@ -1528,6 +1577,8 @@ export function TentBoard() {
     { label: "Current census", value: totals.currentCensus, tone: "text-foreground" },
     { label: "Occupied beds", value: totals.occupiedBeds, tone: "text-status-occupied" },
     { label: "Open beds", value: `${totals.open} / ${totals.totalBeds}`, tone: "text-status-open" },
+    { label: "Occupied pools", value: totals.occupiedPools, tone: "text-status-occupied" },
+    { label: "Open pools", value: `${totals.openPools} / ${totals.totalPools}`, tone: "text-status-open" },
     { label: "Incoming", value: incomingQueue.length, tone: "text-signal" },
     { label: "Seen today", value: totals.seenToday, tone: "text-foreground" },
   ];
@@ -1538,6 +1589,7 @@ export function TentBoard() {
         pods={pods}
         eventName={eventName}
         incomingCount={incomingQueue.length}
+        metrics={{ census: totals.currentCensus, seen: totals.seenToday, discharged: dispositions.filter(d => d.category === "discharged").length, ems: dispositions.filter(d => d.category === "ems").length, other: dispositions.filter(d => d.category === "other").length }}
         bedTone={bedTileTone}
         onClose={() => setStatusView(false)}
       />
@@ -1581,10 +1633,11 @@ export function TentBoard() {
             <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
               <div className="min-w-0">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Medical Tent 1 - Charge Board
+                  TriageDesk - Charge Board
                 </div>
                 <input
                   value={eventName}
+                  readOnly={Boolean(connected)}
                   onChange={(e) => setEventName(e.target.value)}
                   className="w-full min-w-0 rounded-sm border border-transparent bg-transparent px-0 py-0 text-lg font-semibold tracking-tight outline-none hover:border-border focus:border-signal"
                 />
@@ -1613,11 +1666,12 @@ export function TentBoard() {
               <button
                 type="button"
                 onClick={() => setAddingPatient(true)}
+                disabled={connected?.readOnly}
                 className="min-h-11 rounded-sm bg-signal px-3 text-sm font-bold text-background"
               >
                 New Patient
               </button>
-              <details className="relative">
+              {connected ? connected.settings : <details className="relative">
                 <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border px-3 text-sm">
                   <Settings size={16} />
                   Board settings
@@ -1662,7 +1716,7 @@ export function TentBoard() {
                     Clear race
                   </button>
                 </div>
-              </details>
+              </details>}
               <div className="hidden flex-wrap gap-3 sm:flex xl:justify-end">
                 {(["open", "cleaning"] as BedStatus[]).map((status) => (
                   <div key={status} className="flex items-center gap-1.5">
@@ -1979,12 +2033,14 @@ export function TentBoard() {
               <div className="pod-grid grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
                 {pods.map((pod) => (
                   <PodCard
+                    layoutLocked={Boolean(connected) && !connected?.onEditPod}
+                    readOnly={connected?.readOnly ?? false}
                     key={pod.id}
                     pod={pod}
                     selected={selectedPod === pod.id}
                     setup={setup}
                     onSelect={() => setSelectedPod(selectedPod === pod.id ? null : pod.id)}
-                    onEdit={() => setEditingPod(pod.id)}
+                    onEdit={() => connected ? connected.onEditPod?.(pod.id) : setEditingPod(pod.id)}
                     onEditPatient={startPatientEdit}
                   />
                 ))}
@@ -2072,7 +2128,7 @@ export function TentBoard() {
                           {pods.map((pod) => {
                             const open = pod.closed
                               ? 0
-                              : pod.beds.filter((bed) => bed.status === "open").length;
+                              : pod.beds.filter((bed) => bed.status === "open" || (bed.reserved && editPatient.kind === "bed" && bed.visitId === pods.flatMap(p => p.beds).find(b => b.id === editPatient.bedId)?.visitId)).length;
                             const current =
                               editPatient.kind === "bed" && editPatient.podId === pod.id;
                             return (
