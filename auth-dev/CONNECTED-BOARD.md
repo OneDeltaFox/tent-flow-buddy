@@ -37,6 +37,12 @@ Validation: 18 browser tests passed; local database suite passed 18 tests with t
 
 ## Remaining boundaries
 
+### Manage Team (October 17, 2026)
+
+Migration 011 is installed in development. Active-race owners can open Race Settings > Manage Team to list members, add existing accounts by email, change Editor/Viewer roles, and remove race access. All writes require confirmation, compare the expected prior role under a race lock, and append a protected audit event. Owner access cannot be changed. Unknown accounts must first be created/invited in Supabase; this panel does not send email or provision accounts. Installation changed no memberships. Affected users should reload to pick up their new view; backend authorization applies to subsequent requests. Already displayed information cannot be recalled.
+
+Validation: 19 browser tests passed, TypeScript and development build passed, and 19 local database tests passed with one real-concurrency test skipped. Phone screenshot checked. Real-device owner acceptance is pending. Changes have not yet been committed or pushed.
+
 - Visible boards automatically reload their authorized snapshot every five seconds and on focus/network return. This is polling, not Supabase Realtime push. Refresh remains available and successful commands reload immediately. Automatic reads pause during dialogs, form focus, and pointer gestures; responses arriving during interaction are discarded to preserve the displayed revision. Failed background reads mark the patient board stale and block patient writes until a successful retry. Uncertain writes still require explicit refresh. Layout-only viewers poll only `race_layout`, never patient records.
 - Pod renaming/deletion, event renaming, reset, and End Race remain unavailable in connected mode. Pod status/capability editing and section additions require migration 008 to be installed.
 - Viewers do not yet have the patient status-board projection wired into this entry.

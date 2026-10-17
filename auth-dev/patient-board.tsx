@@ -8,6 +8,7 @@ import { AddPods } from "./add-pods";
 import { EditPod } from "./edit-pod";
 import { createPatientId } from "./patient-id";
 import { useAutoRefresh } from "./auto-refresh";
+import { ManageTeam } from "./manage-team";
 
 type Visit = { id: string; revision: number; bib: string; triage: Triage; complaint: string; notes: string; source: string; eta: string;
   medical_started_at: string | null; dispositioned_at: string | null; disposition: DispositionCategory; other_disposition: string | null };
@@ -22,6 +23,7 @@ export function PatientBoard({ client, race, onBack }: {
   const [busy, setBusy] = useState(false);
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const [editingPod, setEditingPod] = useState<Pod | null>(null);
+  const [teamOpen, setTeamOpen] = useState(false);
   const lock = useRef(false);
   const alive = useRef(true);
   const createId = useRef<string | null>(null);
@@ -108,7 +110,7 @@ export function PatientBoard({ client, race, onBack }: {
   }) })) : [];
   const settings = race.role === "owner" && race.state === "active" ? <details className="relative">
     <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded border px-3"><Settings size={16} />Race Settings</summary>
-    <div className="absolute right-0 top-full z-20 w-64 rounded border bg-card p-3 shadow-xl"><AddPods client={client} raceId={race.id} pods={snapshot?.pods ?? []} onSaved={() => { void refresh(); }} /></div>
+    <div className="absolute right-0 top-full z-20 w-64 rounded border bg-card p-3 shadow-xl"><AddPods client={client} raceId={race.id} pods={snapshot?.pods ?? []} onSaved={() => { void refresh(); }} /><button className="mt-2 min-h-11 w-full rounded border px-3" onClick={() => setTeamOpen(true)}>Manage Team</button></div>
   </details> : null;
   return <section className="grid gap-3">
     <div className="flex gap-3">
@@ -127,5 +129,6 @@ export function PatientBoard({ client, race, onBack }: {
           ...(race.role === "owner" && race.state === "active" ? { onEditPod: (id: string) => setEditingPod(snapshot.pods.find(pod => pod.id === id) ?? null) } : {}) }} />
       </div>}
     {editingPod && <EditPod key={editingPod.id} client={client} pod={editingPod} onClose={() => setEditingPod(null)} onSaved={() => { void refresh(); }} />}
+    {teamOpen && race.role === "owner" && <ManageTeam client={client} raceId={race.id} onClose={() => setTeamOpen(false)} />}
   </section>;
 }

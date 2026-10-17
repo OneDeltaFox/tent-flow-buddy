@@ -23,7 +23,7 @@ test('database foundation', async (t) => {
   assert.equal((await query("select 1 from pg_namespace where nspname in ('race_private','auth')")).rows.length,0);
   await exec(`create role authenticated nologin; create role anon nologin;
     create schema auth;
-    create table auth.users(id uuid primary key);
+    create table auth.users(id uuid primary key, email text);
     create function auth.uid() returns uuid language sql stable as
       $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
     grant usage on schema auth to authenticated;
@@ -32,7 +32,7 @@ test('database foundation', async (t) => {
   for (const name of (await readdir(migrationDir)).filter(n=>n.endsWith('.sql')).sort()) {
     await exec(await readFile(new URL(name,migrationDir),'utf8'));
   }
-  await exec(`insert into auth.users values ('${owner}'),('${editor}'),('${viewer}'),('${outsider}');
+  await exec(`insert into auth.users(id) values ('${owner}'),('${editor}'),('${viewer}'),('${outsider}');
     insert into race_private.races(id,owner_id,name) values ('${race}','${owner}','Fictional race'),('${foreignRace}','${outsider}','Other race');
     insert into race_private.memberships values ('${race}','${editor}','editor'),('${race}','${viewer}','viewer');
     insert into race_private.pods(id,race_id,name,kind,color,closed) values
@@ -316,6 +316,37 @@ test('database foundation', async (t) => {
     assert.equal((await query('select * from race_private.bed_reservations where visit_id=$1',[v])).rows.length,0);
     assert.equal((await query('select cleaning from race_private.beds where id=$1',[regulars[0].id])).rows[0].cleaning,true);
     assert.equal((await query('select count(*)::int n from race_private.turnovers where race_id=$1 and ended_at is null',[r])).rows[0].n,3);
+  });
+  await t.test('team commands are owner-only, race-scoped, audited and reject stale changes',async()=>{
+    const teamRace=id(95);
+    await query('insert into race_private.races(id,owner_id,name) values($1,$2,$3)',[teamRace,owner,'Team test']);
+    for (const [user,email] of [[owner,'owner@example.com'],[editor,'editor@example.com'],[viewer,'viewer@example.com'],[outsider,'outsider@example.com']]) {
+      await query('update auth.users set email=$2 where id=$1',[user,email]);
+    }
+    const change=(user,email,expected,next)=>asUser(user,'select public.set_race_member($1,$2,$3,$4)',[teamRace,email,expected,next]);
+    for (const user of [editor,viewer,outsider]) {
+      await assert.rejects(asUser(user,'select public.race_team($1)',[teamRace]),/Access denied/);
+      await assert.rejects(change(user,'editor@example.com',null,'editor'),/Access denied/);
+    }
+    await assert.rejects(change(owner,'owner@example.com',null,'viewer'),/Owner access/);
+    await assert.rejects(change(owner,'missing@example.com',null,'viewer'),/Account not found/);
+    await assert.rejects(change(owner,'editor@example.com',null,'owner'),/Invalid role/);
+    await change(owner,' EDITOR@EXAMPLE.COM ',null,'viewer');
+    await assert.rejects(asUser(editor,'select public.patient_board($1)',[teamRace]),/Access denied/);
+    await change(owner,'editor@example.com','viewer','editor');
+    await asUser(editor,'select public.patient_board($1)',[teamRace]);
+    await assert.rejects(change(owner,'editor@example.com','viewer',null),/Membership changed/);
+    const team=(await asUser(owner,'select public.race_team($1) team',[teamRace])).rows[0].team;
+    assert.equal(team.length,2);
+    assert.ok(team.some(m=>m.role==='owner' && m.id===owner));
+    await change(owner,'editor@example.com','editor',null);
+    await assert.rejects(asUser(editor,'select public.viewer_status($1)',[teamRace]),/Access denied/);
+    assert.equal((await query('select role from race_private.memberships where race_id=$1 and user_id=$2',[race,editor])).rows[0].role,'editor');
+    assert.equal((await query('select count(*)::int n from race_private.team_events where race_id=$1',[teamRace])).rows[0].n,3);
+    await exec('set role anon');
+    await assert.rejects(query('select public.race_team($1)',[teamRace]),/permission denied/);
+    await assert.rejects(query('select public.set_race_member($1,$2,null,$3)',[teamRace,'editor@example.com','editor']),/permission denied/);
+    await exec('reset role');
   });
   await t.test('real concurrent clients cannot both claim one bed',{skip:!url},async()=>{
     const a=id(50), b=id(51), target=id(35);
