@@ -93,6 +93,27 @@ test('database foundation', async (t) => {
     await query('delete from race_private.memberships where user_id=$1',[invited]);
   });
 
+  await t.test('invitation email claims enforce ownership, expiry, one attempt and owner-wide limits', async()=>{
+    const create=async(n)=> (await asUser(owner,'select public.create_race_invitation($1,$2,$3) id',[race,`delivery-${n}@example.test`,'viewer'])).rows[0].id;
+    const claim=(user,inv,r=race)=>asUser(user,'select public.claim_invitation_email($1,$2) result',[r,inv]);
+    const inv=await create(0);
+    for(const user of [editor,viewer,outsider]) await assert.rejects(claim(user,inv),/Access denied/);
+    await assert.rejects(claim(owner,inv,foreignRace),/Access denied/);
+    assert.deepEqual((await claim(owner,inv)).rows[0].result,{email:'delivery-0@example.test'});
+    await assert.rejects(claim(owner,inv),/already attempted/);
+    const canceled=await create('canceled');
+    await asUser(owner,'select public.cancel_race_invitation($1,$2)',[race,canceled]);
+    await assert.rejects(claim(owner,canceled),/unavailable/);
+    const expired=await create('expired');
+    await query("update race_private.invitations set expires_at=now()-interval '1 second' where id=$1",[expired]);
+    await assert.rejects(claim(owner,expired),/unavailable/);
+    for(let n=1;n<10;n++) await claim(owner,await create(n));
+    await assert.rejects(claim(owner,await create(10)),/limit reached/);
+    await exec('set role anon');
+    await assert.rejects(query('select public.claim_invitation_email($1,$2)',[race,inv]),/permission denied/);
+    await exec('reset role');
+  });
+
   await t.test('viewer display endpoint is member-only and strictly projected', async()=>{
     for (const user of [owner,editor,viewer]) {
       const s=(await asUser(user,'select public.viewer_status($1) s',[race])).rows[0].s;
