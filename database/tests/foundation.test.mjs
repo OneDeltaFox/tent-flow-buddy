@@ -89,6 +89,16 @@ test('database foundation', async (t) => {
     assert.equal(reports[0].totals.medical_mean_seconds,null);
     assert.doesNotMatch(JSON.stringify(reports),/SECRET|bib|notes|visit_id/);
     await assert.rejects(asUser(viewer,'select public.race_daily_reports($1)',[r]),/Access denied/);
+    const remove=(user,report=saved,confirmation='DELETE REPORT')=>asUser(user,'select public.delete_race_report($1,$2,$3)',[r,report,confirmation]);
+    for(const user of [editor,viewer,outsider]) await assert.rejects(remove(user),/Access denied/);
+    await assert.rejects(remove(owner,saved,'NO'),/Confirmation/);
+    await assert.rejects(remove(owner,id(999)),/unavailable/);
+    await remove(owner);
+    await remove(owner);
+    assert.deepEqual((await asUser(owner,'select public.race_daily_reports($1) r',[r])).rows[0].r,[]);
+    assert.equal((await query('select totals from race_private.daily_reports where id=$1',[saved])).rows[0].totals,null);
+    assert.equal((await preview()).last_report_id,saved);
+    assert.equal((await end(owner,current)).rows[0].id,saved);
     await asUser(owner,'select public.start_next_race_day($1,$2)',[r,saved]);
     await query('insert into race_private.visits(id,race_id) values($1,$2)',[v,r]);
     assert.equal((await end(owner,current)).rows[0].id,saved);

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Mail, RefreshCw } from "lucide-react";
+import { Mail, RefreshCw, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
-type Preview = { token: string; generation: number; total: number; active: number; state: string };
+type Preview = { token: string; generation: number; total: number; active: number; state: string; last_report_id?: string | null };
 type Report = { id: string; generated_at: string; totals: Record<string, number | null> };
 export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
   client: SupabaseClient; raceId: string; raceName: string; onClose: () => void; onChanged: () => void;
@@ -16,6 +16,8 @@ export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ended, setEnded] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Report | null>(null);
+  const [deleteUncertain, setDeleteUncertain] = useState(false);
   const lock = useRef(false);
   const button = "min-h-11 rounded border px-3 disabled:opacity-50";
   async function request(name: string, args: Record<string, unknown>) {
@@ -29,10 +31,11 @@ export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
   }
   async function load() {
     if (lock.current) return;
-    lock.current = true; setBusy(true); setPreview(null); setConfirm(""); setAllowActive(false); setError("");
+    lock.current = true; setBusy(true); setPreview(null); setConfirm(""); setAllowActive(false); setError(""); setPendingDelete(null);
     try {
       setReports(await request("race_daily_reports", { p_race: raceId }));
       setPreview(await request("end_race_preview", { p_race: raceId }));
+      setDeleteUncertain(false);
     } catch { setError("Unable to load End Race. Owner access and migration 014 are required."); }
     finally { lock.current = false; setBusy(false); }
   }
@@ -44,6 +47,7 @@ export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
       await request("end_race", { p_race: raceId, p_token: preview.token, p_generation: preview.generation, p_confirm: confirm, p_allow_active: allowActive });
       setEnded(true); setPreview(null);
       setReports(await request("race_daily_reports", { p_race: raceId }));
+      setPreview(await request("end_race_preview", { p_race: raceId }));
     } catch {
       setPreview(null);
       setError("Result not confirmed. Refresh this dialog and check saved reports before retrying. The board may have changed.");
@@ -61,14 +65,27 @@ export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
     window.location.href = `mailto:${addresses.map(encodeURIComponent).join(",")}?subject=${encodeURIComponent("TriageDesk aggregate report")}&body=${encodeURIComponent(body)}`;
   }
   async function startNextDay() {
-    if (lock.current || !reports[0]) return;
+    const reportId = preview?.last_report_id ?? reports[0]?.id;
+    if (lock.current || !reportId) return;
     lock.current = true; setBusy(true); setError("");
-    try { await request("start_next_race_day", { p_race: raceId, p_report: reports[0].id }); onChanged(); }
+    try { await request("start_next_race_day", { p_race: raceId, p_report: reportId }); onChanged(); }
     catch { setError("Start not confirmed. Close and refresh the race list before retrying."); }
     finally { lock.current = false; setBusy(false); }
   }
+  async function deleteReport() {
+    if (lock.current || !pendingDelete || deleteUncertain) return;
+    lock.current = true; setBusy(true); setError("");
+    try {
+      await request("delete_race_report", { p_race: raceId, p_report: pendingDelete.id, p_confirm: "DELETE REPORT" });
+      setReports(current => current.filter(report => report.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch {
+      setDeleteUncertain(true);
+      setError("Deletion not confirmed. Refresh reports before retrying. Owner access and migration 015 are required.");
+    } finally { lock.current = false; setBusy(false); }
+  }
   return <Dialog open onOpenChange={open => { if (!open && !busy) { if (ended) onChanged(); else onClose(); } }}>
-    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl" onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>
+    <DialogContent style={{ maxHeight: "90dvh", overflowY: "auto" }} className="sm:max-w-xl" onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>
       <DialogTitle>End Race / Daily Reports</DialogTitle>
       <p className="break-words font-semibold">{raceName}</p>
       <DialogDescription>Patient records and histories will be permanently removed from the active database. Beds and pools will be ready; the layout will remain. Account records and provider backups are not erased by this action.</DialogDescription>
@@ -79,11 +96,12 @@ export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
         <label className="grid gap-1">Type END RACE to confirm<input className="min-h-11 rounded border bg-background p-2" value={confirm} onChange={event => setConfirm(event.target.value)} /></label>
         <button className={`${button} bg-destructive text-destructive-foreground`} disabled={busy || confirm !== "END RACE" || (preview.active > 0 && !allowActive)} onClick={() => void finish()}>End Race and Delete Patient Data</button>
       </>}
-      {(ended || preview?.state === "closed") && reports[0] && <button className={button} disabled={busy} onClick={() => void startNextDay()}>Start Next Day With This Layout</button>}
+      {(ended || preview?.state === "closed") && (preview?.last_report_id || reports[0]) && <button className={button} disabled={busy} onClick={() => void startNextDay()}>Start Next Day With This Layout</button>}
       <button className={`${button} flex items-center justify-center gap-2`} disabled={busy} onClick={() => void load()}><RefreshCw size={16} />Refresh Reports</button>
       <label className="grid gap-1">Report email addresses<input className="min-h-11 rounded border bg-background p-2" value={recipients} onChange={event => setRecipients(event.target.value)} placeholder="name@example.com, name@example.com" /></label>
       <p className="text-sm text-muted-foreground">Email opens a draft in your email app. Review the recipients and send it there.</p>
-      {reports.map(report => <div key={report.id} className="flex flex-wrap items-center justify-between gap-2 border-b py-2"><span>{new Date(report.generated_at).toLocaleString()} · {report.totals["total_visits"]} patients</span><button className={`${button} flex items-center gap-2`} onClick={() => email(report)}><Mail size={16} />Email Report</button></div>)}
+      {reports.map(report => <div key={report.id} className="flex flex-wrap items-center justify-between gap-2 border-b py-2"><span>{new Date(report.generated_at).toLocaleString()} · {report.totals["total_visits"]} patients</span><div className="flex gap-2"><button disabled={busy || deleteUncertain} className={`${button} flex items-center gap-2`} onClick={() => email(report)}><Mail size={16} />Email Report</button><button disabled={busy || deleteUncertain} className={`${button} text-destructive`} aria-label={`Delete report from ${new Date(report.generated_at).toLocaleString()}`} title="Delete report" onClick={() => setPendingDelete(report)}><Trash2 size={18} /></button></div></div>)}
+      {pendingDelete && <section aria-label="Confirm report deletion" className="grid gap-3 border-t pt-3"><h3 className="font-semibold">Delete report from {new Date(pendingDelete.generated_at).toLocaleString()}?</h3><p>This permanently removes the saved report totals, not current patients or the layout. Previously emailed copies and provider backups are unaffected. A minimal reset receipt remains for retry safety.</p><div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => setPendingDelete(null)}>Cancel Deletion</button><button className={`${button} bg-destructive text-destructive-foreground`} disabled={busy || deleteUncertain} onClick={() => void deleteReport()}>Delete Report Permanently</button></div></section>}
       <button className={button} disabled={busy} onClick={() => { if (ended) onChanged(); else onClose(); }}>Close</button>
     </DialogContent>
   </Dialog>;

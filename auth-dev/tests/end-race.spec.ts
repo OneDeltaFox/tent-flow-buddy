@@ -7,8 +7,13 @@ test("End Race requires typed confirmation and active-patient acknowledgement", 
   await page.route("**/rest/v1/rpc/patient_board", r => r.fulfill({ json: { pods: [], visits: [], placements: [], turnovers: [] } }));
   let ended = false;
   let writes = 0;
-  await page.route("**/rest/v1/rpc/end_race_preview", r => r.fulfill({ json: { token: "preview", generation: 0, total: 3, active: 1, state: ended ? "closed" : "active" } }));
-  await page.route("**/rest/v1/rpc/race_daily_reports", r => r.fulfill({ json: ended ? [{ id: "report", generated_at: "2026-10-18T12:00:00Z", totals: { total_visits: 3, incomplete_visits: 1 } }] : [] }));
+  let deletions = 0;
+  await page.route("**/rest/v1/rpc/end_race_preview", r => r.fulfill({ json: { token: "preview", generation: 0, total: 3, active: 1, state: ended ? "closed" : "active", last_report_id: ended ? "report" : null } }));
+  await page.route("**/rest/v1/rpc/race_daily_reports", r => r.fulfill({ json: ended && !deletions ? [{ id: "report", generated_at: "2026-10-18T12:00:00Z", totals: { total_visits: 3, incomplete_visits: 1 } }] : [] }));
+  await page.route("**/rest/v1/rpc/delete_race_report", async r => {
+    expect(r.request().postDataJSON()).toMatchObject({ p_race: "race", p_report: "report", p_confirm: "DELETE REPORT" });
+    deletions++; await r.fulfill({ status: 204 });
+  });
   await page.route("**/rest/v1/rpc/end_race", async r => {
     expect(r.request().postDataJSON()).toMatchObject({ p_confirm: "END RACE", p_allow_active: true, p_token: "preview", p_generation: 0 });
     writes++; ended = true; await r.fulfill({ json: "report" });
@@ -31,5 +36,15 @@ test("End Race requires typed confirmation and active-patient acknowledgement", 
   expect(writes).toBe(1);
   await dialog.getByRole("button", { name: "Email Report", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("valid email addresses");
+  await expect(dialog.getByRole("button", { name: "Start Next Day With This Layout" })).toBeVisible();
+  await dialog.getByRole("button", { name: /^Delete report from/ }).click();
+  expect(deletions).toBe(0);
+  await dialog.getByRole("button", { name: "Cancel Deletion" }).click();
+  expect(deletions).toBe(0);
+  await dialog.getByRole("button", { name: /^Delete report from/ }).click();
+  await page.screenshot({ path: "test-results/delete-report-mobile.png", fullPage: true });
+  await dialog.getByRole("button", { name: "Delete Report Permanently" }).click();
+  await expect(dialog.getByRole("button", { name: "Email Report", exact: true })).toHaveCount(0);
+  expect(deletions).toBe(1);
   await expect(dialog.getByRole("button", { name: "Start Next Day With This Layout" })).toBeVisible();
 });

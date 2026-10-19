@@ -1,5 +1,9 @@
 # End Race development implementation
 
+## Report deletion (migration 015)
+
+Owners can delete report totals after a dated confirmation. The server independently checks ownership and race/report association. It clears totals from active storage and hides the report from retrieval. A minimal receipt (report ID, race ID, generation, creation/deletion timestamps) remains to prevent repeated End Race calls from erasing another day and to allow Start Next Day after all reports have been deleted. Patient records, layout, and memberships are not modified. Emailed/exported copies and provider backups are unaffected. Unconfirmed failures require refreshing before retrying. Migration 015 was installed with approval in development on 2026-10-18; verification showed one report receipt and zero deleted reports. The UI ships with this change.
+
 Migration 014 is not automatically deployed. No hosted race has been reset by development tests.
 
 Owner opens End Race / Reports, reviews record counts, types END RACE, and explicitly acknowledges unresolved patients if any. Server checks ownership, locks the race, and rejects a stale patient revision preview. It atomically saves fixed aggregate fields, deletes patient details/visits/placements/reservations/events/turnover histories, clears cleaning, opens pods and pools, and closes the race. Names, colors, capacities, capabilities, account memberships, invitations, and team audit records remain. Account/contact information is not patient data and is not purged by this command.
