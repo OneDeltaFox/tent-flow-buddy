@@ -36,6 +36,20 @@ test("End Race requires typed confirmation and active-patient acknowledgement", 
   expect(writes).toBe(1);
   await dialog.getByRole("button", { name: "Email Report", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("valid email addresses");
+  let emails = 0;
+  await page.route("**/functions/v1/send-race-report", async r => {
+    expect(r.request().postDataJSON()).toMatchObject({ raceId: "race", reportId: "report", recipients: ["test@example.com"] });
+    emails++; await r.fulfill({ json: { accepted: true } });
+  });
+  await dialog.getByLabel("Report email addresses").fill("test@example.com");
+  await dialog.getByRole("button", { name: "Email Report", exact: true }).click();
+  expect(emails).toBe(0);
+  await dialog.getByRole("button", { name: "Cancel Email" }).click();
+  expect(emails).toBe(0);
+  await dialog.getByRole("button", { name: "Email Report", exact: true }).click();
+  await dialog.getByRole("button", { name: "Confirm and Send Report" }).click();
+  await expect(dialog.getByText("Report accepted by the email service. Check the recipient inbox and spam folder.")).toBeVisible();
+  expect(emails).toBe(1);
   await expect(dialog.getByRole("button", { name: "Start Next Day With This Layout" })).toBeVisible();
   await dialog.getByRole("button", { name: /^Delete report from/ }).click();
   expect(deletions).toBe(0);

@@ -1,3 +1,7 @@
 [functions.send-race-invitation]
 # The handler validates the bearer token with Auth before any privileged action.
 verify_jwt = false
+
+[functions.send-race-report]
+# Auth validation and owner-only report claim happen inside the handler.
+verify_jwt = false

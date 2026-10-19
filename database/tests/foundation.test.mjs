@@ -60,6 +60,18 @@ test('database foundation', async (t) => {
   const transition=(user,v,revision,action,destination=null,category=null,other=null)=>asUser(user,
     'select race_private.transition_visit($1,$2,$3,$4,$5,$6)',[v,revision,action,destination,category,other]);
 
+  await t.test('report email claims are owner-only, bounded and single attempt', async()=>{
+    const report=id(980);
+    await query('insert into race_private.daily_reports(id,race_id,generation,totals) values($1,$2,99,$3)',[report,race,{total_visits:5}]);
+    const claim=(user,attempt)=>asUser(user,'select public.claim_report_email($1,$2,$3)',[race,report,attempt]);
+    for (const user of [editor,viewer,outsider]) await assert.rejects(()=>claim(user,id(981)),/Access denied/);
+    await claim(owner,id(981));
+    await assert.rejects(()=>claim(owner,id(981)),/already attempted/);
+    for(let n=982;n<=990;n++) await claim(owner,id(n));
+    await assert.rejects(()=>claim(owner,id(991)),/limit reached/);
+    await asUser(owner,"select public.delete_race_report($1,$2,'DELETE REPORT')",[race,report]);
+    await assert.rejects(()=>claim(owner,id(992)),/unavailable/);
+  });
   await t.test('End Race is confirmed, owner-only, atomic and retry-safe across days', async()=>{
     const r=id(900), p=id(901), b=id(902), v=id(903);
     await query('insert into race_private.races(id,owner_id,name) values($1,$2,$3)',[r,owner,'Reset fixture']);
