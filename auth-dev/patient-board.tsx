@@ -9,6 +9,7 @@ import { EditPod } from "./edit-pod";
 import { createPatientId } from "./patient-id";
 import { useAutoRefresh } from "./auto-refresh";
 import { ManageTeam } from "./manage-team";
+import { EndRace } from "./end-race";
 
 type Visit = { id: string; revision: number; bib: string; triage: Triage; complaint: string; notes: string; source: string; eta: string;
   medical_started_at: string | null; dispositioned_at: string | null; disposition: DispositionCategory; other_disposition: string | null };
@@ -24,6 +25,7 @@ export function PatientBoard({ client, race, onBack }: {
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const [editingPod, setEditingPod] = useState<Pod | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
   const lock = useRef(false);
   const alive = useRef(true);
   const createId = useRef<string | null>(null);
@@ -116,6 +118,7 @@ export function PatientBoard({ client, race, onBack }: {
     <div className="flex gap-3">
       <button aria-label="Back to races" title="Back to races" disabled={busy} onClick={onBack} className="min-h-11 border p-3"><ArrowLeft size={18} /></button>
       <button aria-label="Refresh board" title="Refresh board" disabled={busy} onClick={() => { void refresh(); }} className="min-h-11 border p-3"><RefreshCw size={18} /></button>
+      {race.role === "owner" && <button disabled={busy} className="min-h-11 rounded border border-destructive px-3 text-destructive" onClick={() => setEndOpen(true)}>End Race / Reports</button>}
       {busy && <p role="status">Saving or refreshing...</p>}
       <p role="status" className="self-center text-sm text-muted-foreground">{syncFailed ? "Updates interrupted - displayed data may be out of date. Retrying..." : lastUpdated ? `Auto-update on · Updated ${lastUpdated}` : "Connecting..."}</p>
     </div>
@@ -130,5 +133,6 @@ export function PatientBoard({ client, race, onBack }: {
       </div>}
     {editingPod && <EditPod key={editingPod.id} client={client} pod={editingPod} onClose={() => setEditingPod(null)} onSaved={() => { void refresh(); }} />}
     {teamOpen && race.role === "owner" && <ManageTeam client={client} raceId={race.id} onClose={() => setTeamOpen(false)} />}
+    {endOpen && race.role === "owner" && <EndRace client={client} raceId={race.id} raceName={race.name} onClose={() => { setEndOpen(false); void refresh(); }} onChanged={onBack} />}
   </section>;
 }

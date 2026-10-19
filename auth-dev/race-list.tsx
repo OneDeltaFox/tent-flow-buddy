@@ -34,7 +34,7 @@ export function RaceList({ client }: { client: SupabaseClient }) {
   }, [client, attempt]);
   if (selected) return selected.role === "viewer"
     ? <RaceLayout key={selected.id} client={client} race={selected} onBack={() => setSelected(null)} />
-    : <PatientBoard key={selected.id} client={client} race={selected} onBack={() => setSelected(null)} />;
+    : <PatientBoard key={selected.id} client={client} race={selected} onBack={() => { setSelected(null); setAttempt(value => value + 1); }} />;
   return <div className="grid gap-3" aria-label="Your races">
     <div className="flex items-center justify-between gap-3">
       <h3 className="text-lg font-semibold">Your races</h3>

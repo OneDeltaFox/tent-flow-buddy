@@ -1,0 +1,35 @@
+import { test, expect } from "@playwright/test";
+
+test("End Race requires typed confirmation and active-patient acknowledgement", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth", JSON.stringify({ access_token: "token", refresh_token: "refresh", token_type: "bearer", expires_at: Math.floor(Date.now()/1000)+3600, user: { id: "owner" } })));
+  await page.route("**/rest/v1/rpc/my_race_invitations", r => r.fulfill({ json: [] }));
+  await page.route("**/rest/v1/rpc/my_races", r => r.fulfill({ json: [{ id: "race", name: "Fictional Reset Test", role: "owner", state: "active" }] }));
+  await page.route("**/rest/v1/rpc/patient_board", r => r.fulfill({ json: { pods: [], visits: [], placements: [], turnovers: [] } }));
+  let ended = false;
+  let writes = 0;
+  await page.route("**/rest/v1/rpc/end_race_preview", r => r.fulfill({ json: { token: "preview", generation: 0, total: 3, active: 1, state: ended ? "closed" : "active" } }));
+  await page.route("**/rest/v1/rpc/race_daily_reports", r => r.fulfill({ json: ended ? [{ id: "report", generated_at: "2026-10-18T12:00:00Z", totals: { total_visits: 3, incomplete_visits: 1 } }] : [] }));
+  await page.route("**/rest/v1/rpc/end_race", async r => {
+    expect(r.request().postDataJSON()).toMatchObject({ p_confirm: "END RACE", p_allow_active: true, p_token: "preview", p_generation: 0 });
+    writes++; ended = true; await r.fulfill({ json: "report" });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open board" }).click();
+  await page.getByRole("button", { name: "End Race / Reports" }).click();
+  const dialog = page.getByRole("dialog");
+  const end = dialog.getByRole("button", { name: "End Race and Delete Patient Data" });
+  await expect(end).toBeDisabled();
+  await dialog.getByLabel("Type END RACE to confirm").fill("END RACE");
+  await expect(end).toBeDisabled();
+  await dialog.getByRole("checkbox").check();
+  await expect(end).toBeEnabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "test-results/end-race-mobile.png", fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await end.click();
+  await expect(dialog.getByRole("status")).toContainText("Patient records cleared");
+  expect(writes).toBe(1);
+  await dialog.getByRole("button", { name: "Email Report", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("valid email addresses");
+  await expect(dialog.getByRole("button", { name: "Start Next Day With This Layout" })).toBeVisible();
+});

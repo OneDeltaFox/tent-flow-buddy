@@ -60,6 +60,47 @@ test('database foundation', async (t) => {
   const transition=(user,v,revision,action,destination=null,category=null,other=null)=>asUser(user,
     'select race_private.transition_visit($1,$2,$3,$4,$5,$6)',[v,revision,action,destination,category,other]);
 
+  await t.test('End Race is confirmed, owner-only, atomic and retry-safe across days', async()=>{
+    const r=id(900), p=id(901), b=id(902), v=id(903);
+    await query('insert into race_private.races(id,owner_id,name) values($1,$2,$3)',[r,owner,'Reset fixture']);
+    await query("insert into race_private.pods(id,race_id,name,color) values($1,$2,'Pod 1','#ffcc00')",[p,r]);
+    await query("insert into race_private.beds(id,race_id,pod_id,label,cleaning) values($1,$2,$3,'1-1',true)",[b,r,p]);
+    await query('insert into race_private.visits(id,race_id) values($1,$2)',[v,r]);
+    await query("insert into race_private.visit_details(visit_id,race_id,bib,notes) values($1,$2,'SECRET-BIB','SECRET-NOTE')",[v,r]);
+    const preview=async()=> (await asUser(owner,'select public.end_race_preview($1) p',[r])).rows[0].p;
+    const end=(u,x,confirmation='END RACE',allow=true)=>asUser(u,'select public.end_race($1,$2,$3,$4,$5) id',[r,x.token,x.generation,confirmation,allow]);
+    const initial=await preview();
+    for(const u of [editor,viewer,outsider]) await assert.rejects(end(u,initial),/Access denied/);
+    await assert.rejects(end(owner,initial,'no'),/Confirmation/);
+    await assert.rejects(end(owner,initial,'END RACE',false),/Active patients/);
+    await query('update race_private.visits set revision=revision+1 where id=$1',[v]);
+    await assert.rejects(end(owner,initial),/Board changed/);
+    assert.equal((await query('select count(*)::int n from race_private.visit_details where race_id=$1',[r])).rows[0].n,1);
+    const current=await preview();
+    const saved=(await end(owner,current)).rows[0].id;
+    for(const table of ['visits','visit_details','placements','events','turnovers','bed_reservations']) {
+      assert.equal((await query(`select count(*)::int n from race_private.${table} where race_id=$1`,[r])).rows[0].n,0);
+    }
+    assert.equal((await query('select cleaning from race_private.beds where id=$1',[b])).rows[0].cleaning,false);
+    assert.equal((await query('select state from race_private.races where id=$1',[r])).rows[0].state,'closed');
+    const reports=(await asUser(owner,'select public.race_daily_reports($1) r',[r])).rows[0].r;
+    assert.equal(reports[0].totals.total_visits,1);
+    assert.equal(reports[0].totals.incomplete_visits,1);
+    assert.equal(reports[0].totals.medical_mean_seconds,null);
+    assert.doesNotMatch(JSON.stringify(reports),/SECRET|bib|notes|visit_id/);
+    await assert.rejects(asUser(viewer,'select public.race_daily_reports($1)',[r]),/Access denied/);
+    await asUser(owner,'select public.start_next_race_day($1,$2)',[r,saved]);
+    await query('insert into race_private.visits(id,race_id) values($1,$2)',[v,r]);
+    assert.equal((await end(owner,current)).rows[0].id,saved);
+    assert.equal((await query('select count(*)::int n from race_private.visits where race_id=$1',[r])).rows[0].n,1);
+    assert.equal((await query('select state from race_private.races where id=$1',[r])).rows[0].state,'active');
+    await query('delete from race_private.visits where race_id=$1',[r]);
+    await query('delete from race_private.daily_reports where race_id=$1',[r]);
+    await query('delete from race_private.beds where race_id=$1',[r]);
+    await query('delete from race_private.pods where race_id=$1',[r]);
+    await query('delete from race_private.races where id=$1',[r]);
+  });
+
   await t.test('invitations require verified matching email and preserve existing access', async()=>{
     const invited=id(501), wrong=id(502);
     await query('insert into auth.users(id,email) values ($1,$2),($3,$4)',[invited,'invite@example.test',wrong,'wrong@example.test']);
