@@ -60,17 +60,12 @@ test('database foundation', async (t) => {
   const transition=(user,v,revision,action,destination=null,category=null,other=null)=>asUser(user,
     'select race_private.transition_visit($1,$2,$3,$4,$5,$6)',[v,revision,action,destination,category,other]);
 
-  await t.test('report email claims are owner-only, bounded and single attempt', async()=>{
-    const report=id(980);
-    await query('insert into race_private.daily_reports(id,race_id,generation,totals) values($1,$2,99,$3)',[report,race,{total_visits:5}]);
-    const claim=(user,attempt)=>asUser(user,'select public.claim_report_email($1,$2,$3)',[race,report,attempt]);
-    for (const user of [editor,viewer,outsider]) await assert.rejects(()=>claim(user,id(981)),/Access denied/);
-    await claim(owner,id(981));
-    await assert.rejects(()=>claim(owner,id(981)),/already attempted/);
-    for(let n=982;n<=990;n++) await claim(owner,id(n));
-    await assert.rejects(()=>claim(owner,id(991)),/limit reached/);
-    await asUser(owner,"select public.delete_race_report($1,$2,'DELETE REPORT')",[race,report]);
-    await assert.rejects(()=>claim(owner,id(992)),/unavailable/);
+  await t.test('reporting and report email are disabled for every app role', async()=>{
+    for (const user of [owner,editor,viewer,outsider]) {
+      await assert.rejects(asUser(user,'select public.claim_report_email($1,$2,$3)',[race,id(980),id(981)]),/permission denied/);
+      await assert.rejects(asUser(user,'select public.race_daily_reports($1)',[race]),/permission denied/);
+      await assert.rejects(asUser(user,'select * from race_private.report_preview($1)',[race]),/permission denied/);
+    }
   });
   await t.test('End Race is confirmed, owner-only, atomic and retry-safe across days', async()=>{
     const r=id(900), p=id(901), b=id(902), v=id(903);
@@ -95,21 +90,11 @@ test('database foundation', async (t) => {
     }
     assert.equal((await query('select cleaning from race_private.beds where id=$1',[b])).rows[0].cleaning,false);
     assert.equal((await query('select state from race_private.races where id=$1',[r])).rows[0].state,'closed');
-    const reports=(await asUser(owner,'select public.race_daily_reports($1) r',[r])).rows[0].r;
-    assert.equal(reports[0].totals.total_visits,1);
-    assert.equal(reports[0].totals.incomplete_visits,1);
-    assert.equal(reports[0].totals.medical_mean_seconds,null);
-    assert.doesNotMatch(JSON.stringify(reports),/SECRET|bib|notes|visit_id/);
-    await assert.rejects(asUser(viewer,'select public.race_daily_reports($1)',[r]),/Access denied/);
-    const remove=(user,report=saved,confirmation='DELETE REPORT')=>asUser(user,'select public.delete_race_report($1,$2,$3)',[r,report,confirmation]);
-    for(const user of [editor,viewer,outsider]) await assert.rejects(remove(user),/Access denied/);
-    await assert.rejects(remove(owner,saved,'NO'),/Confirmation/);
-    await assert.rejects(remove(owner,id(999)),/unavailable/);
-    await remove(owner);
-    await remove(owner);
-    assert.deepEqual((await asUser(owner,'select public.race_daily_reports($1) r',[r])).rows[0].r,[]);
-    assert.equal((await query('select totals from race_private.daily_reports where id=$1',[saved])).rows[0].totals,null);
-    assert.equal((await preview()).last_report_id,saved);
+    assert.equal((await query('select count(*)::int n from race_private.daily_reports where race_id=$1',[r])).rows[0].n,0);
+    const receipt=(await query('select * from race_private.race_resets where id=$1',[saved])).rows[0];
+    assert.deepEqual(Object.keys(receipt).sort(),['generation','id','race_id']);
+    assert.equal((await preview()).last_reset_id,saved);
+    assert.equal((await preview()).report_free,true);
     assert.equal((await end(owner,current)).rows[0].id,saved);
     await asUser(owner,'select public.start_next_race_day($1,$2)',[r,saved]);
     await query('insert into race_private.visits(id,race_id) values($1,$2)',[v,r]);
@@ -117,7 +102,7 @@ test('database foundation', async (t) => {
     assert.equal((await query('select count(*)::int n from race_private.visits where race_id=$1',[r])).rows[0].n,1);
     assert.equal((await query('select state from race_private.races where id=$1',[r])).rows[0].state,'active');
     await query('delete from race_private.visits where race_id=$1',[r]);
-    await query('delete from race_private.daily_reports where race_id=$1',[r]);
+    await query('delete from race_private.race_resets where race_id=$1',[r]);
     await query('delete from race_private.beds where race_id=$1',[r]);
     await query('delete from race_private.pods where race_id=$1',[r]);
     await query('delete from race_private.races where id=$1',[r]);
@@ -294,7 +279,9 @@ test('database foundation', async (t) => {
     // Deterministic timestamps are test fixtures, never accepted from a browser command.
     await query(`update race_private.visits set notified_at='2026-01-01 10:00Z',arrived_at='2026-01-01 10:10Z',medical_started_at='2026-01-01 10:15Z',dispositioned_at='2026-01-01 11:15Z' where id=$1`,[visit]);
     await query(`update race_private.placements set started_at='2026-01-01 10:20Z',ended_at='2026-01-01 10:25Z' where visit_id=$1 and kind='pool'`,[visit]);
-    const report=(await asUser(owner,'select * from race_private.report_preview($1)',[race])).rows[0];
+    // Historical report code remains for migration reproducibility, inaccessible to app roles.
+    await query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);
+    const report=(await query('select * from race_private.report_preview($1)',[race])).rows[0];
     assert.equal(report.total_visits,2); assert.equal(report.incomplete_visits,1);
     assert.equal(report.notification_samples,1); assert.equal(report.notification_mean_seconds,600);
     assert.equal(report.medical_samples,1); assert.equal(report.medical_mean_seconds,3600);
@@ -303,8 +290,8 @@ test('database foundation', async (t) => {
     assert.equal(report.transfers,3); assert.equal(report.other,1);
     assert.equal(/FAKE|Dizziness|Private|Fictional detail|visit_id|bib|complaint|notes/.test(JSON.stringify(report)),false);
     assert.equal((await query('select * from race_private.reports')).rows.length,0);
-    await assert.rejects(asUser(editor,'select * from race_private.report_preview($1)',[race]),/Access denied/);
-    await assert.rejects(asUser(owner,'select * from race_private.report_preview($1)',[foreignRace]),/Access denied/);
+    await assert.rejects(asUser(editor,'select * from race_private.report_preview($1)',[race]),/permission denied/);
+    await assert.rejects(asUser(owner,'select * from race_private.report_preview($1)',[foreignRace]),/permission denied/);
   });
   await t.test('pod batches require owner, validate settings, and rollback duplicate names',async()=>{
     const batch=JSON.stringify([{name:'Batch 1',kind:'regular',color:'#ffcc00',beds:4,capabilities:['Cooling','IV']}]);

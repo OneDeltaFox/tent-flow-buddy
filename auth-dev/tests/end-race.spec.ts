@@ -1,26 +1,26 @@
 import { test, expect } from "@playwright/test";
 
-test("End Race requires typed confirmation and active-patient acknowledgement", async ({ page }) => {
+for (const width of [390, 1280]) test(`Report-free reset and next day at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 844 });
   await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth", JSON.stringify({ access_token: "token", refresh_token: "refresh", token_type: "bearer", expires_at: Math.floor(Date.now()/1000)+3600, user: { id: "owner" } })));
   await page.route("**/rest/v1/rpc/my_race_invitations", r => r.fulfill({ json: [] }));
   await page.route("**/rest/v1/rpc/my_races", r => r.fulfill({ json: [{ id: "race", name: "Fictional Reset Test", role: "owner", state: "active" }] }));
   await page.route("**/rest/v1/rpc/patient_board", r => r.fulfill({ json: { pods: [], visits: [], placements: [], turnovers: [] } }));
-  let ended = false;
-  let writes = 0;
-  let deletions = 0;
-  await page.route("**/rest/v1/rpc/end_race_preview", r => r.fulfill({ json: { token: "preview", generation: 0, total: 3, active: 1, state: ended ? "closed" : "active", last_report_id: ended ? "report" : null } }));
-  await page.route("**/rest/v1/rpc/race_daily_reports", r => r.fulfill({ json: ended && !deletions ? [{ id: "report", generated_at: "2026-10-18T12:00:00Z", totals: { total_visits: 3, incomplete_visits: 1 } }] : [] }));
-  await page.route("**/rest/v1/rpc/delete_race_report", async r => {
-    expect(r.request().postDataJSON()).toMatchObject({ p_race: "race", p_report: "report", p_confirm: "DELETE REPORT" });
-    deletions++; await r.fulfill({ status: 204 });
-  });
+  let ended = false, writes = 0, starts = 0;
+  const reporting: string[] = [];
+  page.on("request", request => { if (/race_daily_reports|send-race-report/.test(request.url())) reporting.push(request.url()); });
+  await page.route("**/rest/v1/rpc/end_race_preview", r => r.fulfill({ json: { report_free: true, token: "preview", generation: 0, total: 3, active: 1, state: ended ? "closed" : "active", last_reset_id: ended ? "receipt" : null } }));
   await page.route("**/rest/v1/rpc/end_race", async r => {
     expect(r.request().postDataJSON()).toMatchObject({ p_confirm: "END RACE", p_allow_active: true, p_token: "preview", p_generation: 0 });
-    writes++; ended = true; await r.fulfill({ json: "report" });
+    writes++; ended = true; await r.fulfill({ json: "receipt" });
+  });
+  await page.route("**/rest/v1/rpc/start_next_race_day", async r => {
+    expect(r.request().postDataJSON()).toEqual({ p_race: "race", p_report: "receipt" });
+    starts++; await r.fulfill({ status: 204 });
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Open board" }).click();
-  await page.getByRole("button", { name: "End Race / Reports" }).click();
+  await page.getByRole("button", { name: "End Race", exact: true }).click();
   const dialog = page.getByRole("dialog");
   const end = dialog.getByRole("button", { name: "End Race and Delete Patient Data" });
   await expect(end).toBeDisabled();
@@ -28,37 +28,13 @@ test("End Race requires typed confirmation and active-patient acknowledgement", 
   await expect(end).toBeDisabled();
   await dialog.getByRole("checkbox").check();
   await expect(end).toBeEnabled();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: "test-results/end-race-mobile.png", fullPage: true });
+  await expect(dialog.getByRole("button", { name: /Email Report/ })).toHaveCount(0);
+  await page.screenshot({ path: `test-results/report-free-reset-${width}.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await end.click();
-  await expect(dialog.getByRole("status")).toContainText("Patient records cleared");
+  await expect(dialog.getByRole("status")).toContainText("Patient data cleared");
   expect(writes).toBe(1);
-  await dialog.getByRole("button", { name: "Email Report", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText("valid email addresses");
-  let emails = 0;
-  await page.route("**/functions/v1/send-race-report", async r => {
-    expect(r.request().postDataJSON()).toMatchObject({ raceId: "race", reportId: "report", recipients: ["test@example.com"] });
-    emails++; await r.fulfill({ json: { accepted: true } });
-  });
-  await dialog.getByLabel("Report email addresses").fill("test@example.com");
-  await dialog.getByRole("button", { name: "Email Report", exact: true }).click();
-  expect(emails).toBe(0);
-  await dialog.getByRole("button", { name: "Cancel Email" }).click();
-  expect(emails).toBe(0);
-  await dialog.getByRole("button", { name: "Email Report", exact: true }).click();
-  await dialog.getByRole("button", { name: "Confirm and Send Report" }).click();
-  await expect(dialog.getByText("Report accepted by the email service. Check the recipient inbox and spam folder.")).toBeVisible();
-  expect(emails).toBe(1);
-  await expect(dialog.getByRole("button", { name: "Start Next Day With This Layout" })).toBeVisible();
-  await dialog.getByRole("button", { name: /^Delete report from/ }).click();
-  expect(deletions).toBe(0);
-  await dialog.getByRole("button", { name: "Cancel Deletion" }).click();
-  expect(deletions).toBe(0);
-  await dialog.getByRole("button", { name: /^Delete report from/ }).click();
-  await page.screenshot({ path: "test-results/delete-report-mobile.png", fullPage: true });
-  await dialog.getByRole("button", { name: "Delete Report Permanently" }).click();
-  await expect(dialog.getByRole("button", { name: "Email Report", exact: true })).toHaveCount(0);
-  expect(deletions).toBe(1);
-  await expect(dialog.getByRole("button", { name: "Start Next Day With This Layout" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Start Next Day With This Layout" }).click();
+  expect(starts).toBe(1);
+  expect(reporting).toEqual([]);
 });

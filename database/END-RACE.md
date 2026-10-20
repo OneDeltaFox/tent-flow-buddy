@@ -1,5 +1,15 @@
 # End Race development implementation
 
+## Current workflow: report-free reset (migration 017)
+
+Supersedes the report workflows documented below. During the race, all patient tracking, live medical/pool timers, and disposition behavior remain unchanged. Owner-confirmed End Race deletes patient details, visits, movements, reservations, events, and turnover histories from active storage. It creates no report, counts snapshot, or timing summary. Beds and pools become ready, with layouts, capabilities, accounts, and team permissions preserved.
+
+Only an operational receipt (random ID, race ID, reset generation) remains for idempotent retries and Start Next Day. Existing report IDs/generations are copied into this receipt table for compatibility with already-closed races. Old saved reports are not erased by installation; separate deletion approval would be needed. Report retrieval, preview, deletion, and report-email claim RPC permissions are revoked from application roles. The historical email function cannot claim a report and therefore cannot send one. Invitation emails are unaffected.
+
+The UI refuses End Race unless the backend advertises report_free=true. Migration 017 was installed with owner approval in qcsmtulmugznciipxrfv (main PRODUCTION) on 2026-10-19. Verification confirmed reset receipt storage exists and report retrieval/email permissions are disabled. Installation did not end a race or clear patient data. This is an explicit end-of-day operation, not automatic deletion on browser close or a scheduled retention job. Provider backups/logs and previously exported or emailed copies are not erased.
+
+## Historical implementation (superseded by 017)
+
 ## Report deletion (migration 015)
 
 Owners can delete report totals after a dated confirmation. The server independently checks ownership and race/report association. It clears totals from active storage and hides the report from retrieval. A minimal receipt (report ID, race ID, generation, creation/deletion timestamps) remains to prevent repeated End Race calls from erasing another day and to allow Start Next Day after all reports have been deleted. Patient records, layout, and memberships are not modified. Emailed/exported copies and provider backups are unaffected. Unconfirmed failures require refreshing before retrying. Migration 015 was installed with approval in development on 2026-10-18; verification showed one report receipt and zero deleted reports. The UI ships with this change.

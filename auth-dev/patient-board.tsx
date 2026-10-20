@@ -118,7 +118,7 @@ export function PatientBoard({ client, race, onBack }: {
     <div className="flex gap-3">
       <button aria-label="Back to races" title="Back to races" disabled={busy} onClick={onBack} className="min-h-11 border p-3"><ArrowLeft size={18} /></button>
       <button aria-label="Refresh board" title="Refresh board" disabled={busy} onClick={() => { void refresh(); }} className="min-h-11 border p-3"><RefreshCw size={18} /></button>
-      {race.role === "owner" && <button disabled={busy} className="min-h-11 rounded border border-destructive px-3 text-destructive" onClick={() => setEndOpen(true)}>End Race / Reports</button>}
+      {race.role === "owner" && <button disabled={busy} className="min-h-11 rounded border border-destructive px-3 text-destructive" onClick={() => setEndOpen(true)}>End Race</button>}
       {busy && <p role="status">Saving or refreshing...</p>}
       <p role="status" className="self-center text-sm text-muted-foreground">{syncFailed ? "Updates interrupted - displayed data may be out of date. Retrying..." : lastUpdated ? `Auto-update on · Updated ${lastUpdated}` : "Connecting..."}</p>
     </div>
