@@ -143,6 +143,7 @@ function SignIn() {
       </header>
       <section className={`mx-auto grid w-full ${session ? "max-w-none px-2 py-4" : "max-w-md px-6 py-12"} gap-5`}>
         <h2 className="text-xl font-semibold">{session ? "Account" : "Sign in"}</h2>
+        {!session && <p className="text-sm text-muted-foreground">Day-of-event coordination for race medical teams: patient locations, bed and pool capacity, and live timing.</p>}
         {!client ? <p role="status">Development sign-in is not configured.</p> : loading ?
           <p role="status">Checking session...</p> : session ? <>
             <p className="break-all">{session.user.email}</p>
@@ -179,6 +180,9 @@ function SignIn() {
         {message && <p role="status">{message}</p>}
         {error && <p role="alert" className="text-red-600">{error}</p>}
       </section>
+      <footer className="border-t border-border px-6 py-5 text-sm">
+        <a className="inline-flex min-h-11 items-center underline" href={`${import.meta.env.BASE_URL}privacy.html`}>Privacy Policy</a>
+      </footer>
     </main>
   );
 }
