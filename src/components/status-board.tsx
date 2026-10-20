@@ -121,13 +121,13 @@ export function StatusBoard({
           </button>
         </div>
       </header>
-      <div className="mb-5 grid grid-cols-1 divide-y divide-border border-b border-border xl:grid-cols-[3fr_4fr_2fr_3fr] xl:divide-x xl:divide-y-0">
-        {metricGroups.map(group => <section key={group.title} aria-label={group.title} className="min-w-0 px-3 py-4 first:pl-0">
-          <h3 className="mb-3 text-base font-semibold uppercase text-muted-foreground">{group.title}</h3>
-          <dl className="grid grid-cols-[repeat(auto-fit,minmax(110px,1fr))] gap-x-4 gap-y-3">
+      <div className="status-metrics mb-3 grid grid-cols-1 divide-y divide-border border-b border-border sm:mb-5 xl:grid-cols-[3fr_4fr_2fr_3fr] xl:divide-x xl:divide-y-0">
+        {metricGroups.map(group => <section key={group.title} aria-label={group.title} className="min-w-0 px-1 py-2 first:pl-0 sm:px-3 sm:py-4">
+          <h3 className="mb-1 text-xs font-semibold uppercase text-muted-foreground sm:mb-3 sm:text-base">{group.title}</h3>
+          <dl className="grid grid-cols-[repeat(auto-fit,minmax(72px,1fr))] gap-x-2 gap-y-1 sm:grid-cols-[repeat(auto-fit,minmax(110px,1fr))] sm:gap-x-4 sm:gap-y-3">
             {group.items.map(([label, value, color]) => <div key={label} className="min-w-0">
-              <dt className="min-h-12 break-words text-base text-muted-foreground">{label}</dt>
-              <dd className={`break-words font-mono text-3xl font-bold tabular-nums sm:text-4xl ${color}`}>{value}</dd>
+              <dt className="min-h-8 break-words text-xs text-muted-foreground sm:min-h-12 sm:text-base">{label}</dt>
+              <dd className={`break-words font-mono text-xl font-bold tabular-nums sm:text-4xl ${color}`}>{value}</dd>
             </div>)}
           </dl>
         </section>)}
@@ -137,29 +137,29 @@ export function StatusBoard({
           {fullscreenError}
         </p>
       )}
-      <main className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-4">
+      <main className="grid grid-cols-2 items-start gap-2 sm:grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] sm:gap-4">
         {[...pods].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })).map((pod) => (
           <section
             key={pod.id}
-            className="min-w-0 rounded-md border-2 border-t-4 bg-card p-2 sm:p-3"
+            className="min-w-0 rounded-md border-2 border-t-4 bg-card p-1.5 sm:p-3"
             style={{ borderColor: pod.color }}
           >
-            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-1 border-b border-border pb-2">
-              <h2 className="min-w-0 break-words text-2xl font-bold">{pod.name}</h2>
-              <span className="text-lg font-semibold text-foreground">
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-1 border-b border-border pb-1 sm:mb-3 sm:pb-2">
+              <h2 className="min-w-0 break-words text-base font-bold sm:text-2xl">{pod.name}</h2>
+              <span className="text-xs font-semibold text-foreground sm:text-lg">
                 {pod.closed
                   ? "Closed"
                   : `${pod.beds.filter((bed) => bed.bib).length}/${pod.beds.length}`}
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 sm:gap-2">
               {[...pod.beds].sort((a,b) => a.label.localeCompare(b.label, undefined, { numeric: true })).map((bed) => (
                 <div key={bed.id} className="min-w-0">
                   <div
-                    className={`flex h-16 min-w-0 flex-col items-center justify-center rounded-sm border px-1 text-center font-mono text-2xl font-bold ${bedTone(bed)}`}
+                    className={`flex h-12 min-w-0 flex-col items-center justify-center rounded-sm border px-1 text-center font-mono text-base font-bold sm:h-16 sm:text-2xl ${bedTone(bed)}`}
                     title={bed.bib ? `Race #${bed.bib}, bed ${bed.label}` : bed.label}
                   >
-                    <span className="truncate">
+                    <span className="max-w-full truncate">
                       {bed.bib
                         ? `#${bed.bib}`
                         : bed.status === "cleaning"
@@ -168,11 +168,11 @@ export function StatusBoard({
                             ? "Closed"
                             : bed.label}
                     </span>
-                    {bed.reserved && <span className="text-base">In pool</span>}
+                    {bed.reserved && <span className="text-xs sm:text-base">In pool</span>}
                   </div>
-                  {bed.bib && <p className="min-h-12 break-words text-center text-lg font-semibold">{bed.complaint}</p>}
+                  {bed.bib && <p className="break-words text-center text-xs font-semibold sm:min-h-12 sm:text-lg">{bed.complaint}</p>}
                   <div
-                    className="h-8 text-center font-mono text-lg font-semibold leading-8 tabular-nums"
+                    className="h-5 text-center font-mono text-xs font-semibold leading-5 tabular-nums sm:h-8 sm:text-lg sm:leading-8"
                     title={
                       bed.bib
                         ? "Elapsed time since first bed assignment (hours:minutes:seconds)"
@@ -181,7 +181,7 @@ export function StatusBoard({
                   >
                     {bed.bib ? elapsedTime(bed.arrivedAt, now) : ""}
                   </div>
-                  {bed.bib && poolStartedAt[bed.id] !== undefined && <p className="text-center font-mono text-lg font-semibold">Pool {elapsedTime(poolStartedAt[bed.id], now)}</p>}
+                  {bed.bib && poolStartedAt[bed.id] !== undefined && <p className="break-words text-center font-mono text-xs font-semibold sm:text-lg">Pool {elapsedTime(poolStartedAt[bed.id], now)}</p>}
                 </div>
               ))}
             </div>

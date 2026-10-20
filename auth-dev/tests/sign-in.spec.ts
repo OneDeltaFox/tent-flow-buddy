@@ -114,6 +114,14 @@ test("shared pod tiles are read-only and never load or overwrite demo data", asy
   await expect(page.getByRole("button", { name: "New Patient" })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/connected-board-phone.png", fullPage: true });
+  const podRects = await page.getByTestId("status-board").locator("main > section").evaluateAll(elements => elements.map(element => {
+    const { x, y, width } = element.getBoundingClientRect(); return { x, y, width };
+  }));
+  expect(podRects[0]!.y).toBe(podRects[1]!.y);
+  expect(podRects[1]!.x).toBeGreaterThan(podRects[0]!.x);
+  expect(podRects[2]!.y).toBeGreaterThan(podRects[0]!.y);
+  expect(podRects[2]!.x).toBe(podRects[0]!.x);
+  expect(podRects[2]!.width).toBeCloseTo(podRects[0]!.width, 0);
   await expect(page.getByRole("button", { name: /Edit patient/ })).toHaveCount(0);
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.screenshot({ path: "test-results/viewer-status-desktop.png", fullPage: true });
