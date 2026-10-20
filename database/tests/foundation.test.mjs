@@ -89,6 +89,24 @@ test('database foundation', async (t) => {
     finally { await exec('reset role'); }
   });
 
+  await t.test('team copy is confirmed, owner-only, atomic and never reapplied on retries', async()=>{
+    const next=id(975);
+    const snapshot=(await asUser(owner,'select public.race_team($1) team',[race])).rows[0].team;
+    for(const user of [editor,viewer,outsider]) await assert.rejects(asUser(user,'select public.create_race_with_team($1,$2,$3,$4,$5)',[next,'Next day','UTC',race,JSON.stringify(snapshot)]),/Access denied/);
+    await assert.rejects(asUser(owner,'select public.create_race_with_team($1,$2,$3,$4,$5)',[next,'Next day','UTC',race,'[]']),/Team changed/);
+    assert.equal((await query('select count(*)::int n from race_private.races where id=$1',[next])).rows[0].n,0);
+    await asUser(owner,'select public.create_race_with_team($1,$2,$3,$4,$5)',[next,'Next day','UTC',race,JSON.stringify(snapshot)]);
+    assert.deepEqual((await query('select user_id,role from race_private.memberships where race_id=$1 order by user_id',[next])).rows,
+      [{user_id:editor,role:'editor'},{user_id:viewer,role:'viewer'}]);
+    assert.equal((await query('select count(*)::int n from race_private.team_events where race_id=$1',[next])).rows[0].n,2);
+    assert.equal((await query('select count(*)::int n from race_private.visits where race_id=$1',[next])).rows[0].n,0);
+    await query('delete from race_private.memberships where race_id=$1 and user_id=$2',[next,viewer]);
+    await asUser(owner,'select public.create_race_with_team($1,$2,$3,$4,$5)',[next,'Next day','UTC',race,JSON.stringify(snapshot)]);
+    assert.equal((await query('select count(*)::int n from race_private.memberships where race_id=$1',[next])).rows[0].n,1);
+    for(const table of ['team_events','memberships','beds','pods']) await query(`delete from race_private.${table} where race_id=$1`,[next]);
+    await query('delete from race_private.races where id=$1',[next]);
+  });
+
   await t.test('reporting and report email are disabled for every app role', async()=>{
     for (const user of [owner,editor,viewer,outsider]) {
       await assert.rejects(asUser(user,'select public.claim_report_email($1,$2,$3)',[race,id(980),id(981)]),/permission denied/);

@@ -8,7 +8,7 @@ for (const width of [390, 1280]) test(`owner race management at ${width}px`, asy
   await page.route("**/rest/v1/rpc/my_race_invitations", r => r.fulfill({ json: [] }));
   await page.route("**/rest/v1/rpc/rename_race", r => { const body = r.request().postDataJSON(); expect(body.p_expected_name).toBe("Friday"); name = body.p_name; return r.fulfill({ status: 204 }); });
   const attempts: Record<string, unknown>[] = [];
-  await page.route("**/rest/v1/rpc/create_race", r => { attempts.push(r.request().postDataJSON()); return attempts.length === 1 ? r.fulfill({ status: 503, json: { message: "Unavailable" } }) : r.fulfill({ json: attempts[0].p_id }); });
+  await page.route("**/rest/v1/rpc/create_race", r => { attempts.push(r.request().postDataJSON()); return attempts.length === 1 ? r.fulfill({ status: 503, json: { message: "Unavailable" } }) : r.fulfill({ json: attempts[0]!["p_id"] }); });
   await page.goto("/");
   await page.getByRole("button", { name: "Rename Race", exact: true }).click();
   await page.getByLabel("Race name", { exact: true }).fill("Friday 5K");
@@ -29,4 +29,36 @@ for (const width of [390, 1280]) test(`owner race management at ${width}px`, asy
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(attempts[0]).toEqual(attempts[1]);
   expect(attempts[0]).toMatchObject({ p_name: "Saturday 10K", p_source: "race" });
+});
+
+test("team copy defaults off, reviews roles, and refreshes after stale team rejection", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth", JSON.stringify({ access_token: "token", refresh_token: "refresh", token_type: "bearer", expires_at: Math.floor(Date.now()/1000)+3600, user: { id: "owner" } })));
+  await page.route("**/rest/v1/rpc/my_races", r => r.fulfill({ json: [{ id: "race", name: "Friday", timezone: "UTC", role: "owner", state: "active" }] }));
+  await page.route("**/rest/v1/rpc/my_race_invitations", r => r.fulfill({ json: [] }));
+  const team = [{ id: "owner", email: "owner@example.com", role: "owner" }, { id: "member", email: "viewer@example.com", role: "viewer" }];
+  await page.route("**/rest/v1/rpc/race_team", r => r.fulfill({ json: team }));
+  let writes = 0;
+  await page.route("**/rest/v1/rpc/create_race_with_team", r => {
+    writes++;
+    expect(r.request().postDataJSON().p_expected_team).toEqual(team);
+    return writes === 1 ? r.fulfill({ status: 409, json: { code: "40001" } }) : r.fulfill({ json: "new" });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create New Race", exact: true }).click();
+  await page.getByLabel("Race name", { exact: true }).fill("Saturday");
+  await page.getByLabel("Starting layout").selectOption("race");
+  await expect(page.getByLabel("Copy team access")).not.toBeChecked();
+  await page.getByLabel("Copy team access").check();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  await expect(page.getByText("viewer@example.com", { exact: false })).toBeVisible();
+  expect(writes).toBe(0);
+  await page.getByRole("dialog").evaluate(async element => { await Promise.all(element.getAnimations().map(a => a.finished)); });
+  await page.screenshot({ path: "test-results/copy-team-phone.png", fullPage: true });
+  await page.getByRole("button", { name: "Confirm new race" }).click();
+  await expect(page.getByRole("alert")).toContainText("Team changed");
+  await expect(page.getByRole("button", { name: "Confirm new race" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm new race" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
