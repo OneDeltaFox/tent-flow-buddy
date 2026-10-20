@@ -60,6 +60,35 @@ test('database foundation', async (t) => {
   const transition=(user,v,revision,action,destination=null,category=null,other=null)=>asUser(user,
     'select race_private.transition_visit($1,$2,$3,$4,$5,$6)',[v,revision,action,destination,category,other]);
 
+  await t.test('owner race creation copies only ready layout and supports safe retries and rename', async()=>{
+    const next=id(970);
+    for (const user of [editor,viewer]) {
+      await assert.rejects(asUser(user,'select public.create_race($1,$2,$3,$4)',[next,'Saturday','America/New_York',race]),/Access denied/);
+      await assert.rejects(asUser(user,'select public.rename_race($1,$2,$3)',[race,'Fictional race','No']),/Access denied/);
+    }
+    await assert.rejects(asUser(outsider,'select public.create_race($1,$2,$3,$4)',[next,'Saturday','America/New_York',race]),/Access denied/);
+    await assert.rejects(asUser(owner,'select public.create_race($1,$2,$3,$4)',[next,'Saturday','Not/A_Zone',race]),/Invalid/);
+    await asUser(owner,'select public.create_race($1,$2,$3,$4)',[next,'Saturday','America/New_York',race]);
+    await asUser(owner,'select public.create_race($1,$2,$3,$4)',[next,'Saturday','America/New_York',race]);
+    assert.equal((await query('select count(*)::int n from race_private.pods where race_id=$1',[next])).rows[0].n,3);
+    assert.equal((await query('select count(*)::int n from race_private.beds where race_id=$1',[next])).rows[0].n,4);
+    assert.equal((await query('select count(*)::int n from race_private.pods where race_id=$1 and closed',[next])).rows[0].n,0);
+    for(const table of ['visits','visit_details','placements','turnovers','events','bed_reservations','memberships','team_events'])
+      assert.equal((await query(`select count(*)::int n from race_private.${table} where race_id=$1`,[next])).rows[0].n,0);
+    await asUser(owner,'select public.rename_race($1,$2,$3)',[next,'Saturday','Sunday']);
+    await assert.rejects(asUser(owner,'select public.rename_race($1,$2,$3)',[next,'Saturday','Monday']),/Race changed/);
+    assert.equal((await query('select name from race_private.races where id=$1',[next])).rows[0].name,'Sunday');
+    assert.equal((await query('select count(*)::int n from race_private.visits where race_id=$1',[race])).rows[0].n,2);
+    await asUser(owner,'select public.create_race($1,$2,$3,$4)',[id(971),'Empty','UTC',null]);
+    assert.equal((await query('select count(*)::int n from race_private.pods where race_id=$1',[id(971)])).rows[0].n,0);
+    await query('delete from race_private.beds where race_id=$1',[next]);
+    await query('delete from race_private.pods where race_id=$1',[next]);
+    await query('delete from race_private.races where id in ($1,$2)',[next,id(971)]);
+    await exec('set role anon');
+    try { await assert.rejects(query('select public.create_race($1,$2,$3,$4)',[id(972),'No','UTC',null]),/permission denied/); }
+    finally { await exec('reset role'); }
+  });
+
   await t.test('reporting and report email are disabled for every app role', async()=>{
     for (const user of [owner,editor,viewer,outsider]) {
       await assert.rejects(asUser(user,'select public.claim_report_email($1,$2,$3)',[race,id(980),id(981)]),/permission denied/);

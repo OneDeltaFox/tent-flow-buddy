@@ -1,0 +1,32 @@
+import { test, expect } from "@playwright/test";
+
+for (const width of [390, 1280]) test(`owner race management at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth", JSON.stringify({ access_token: "token", refresh_token: "refresh", token_type: "bearer", expires_at: Math.floor(Date.now()/1000)+3600, user: { id: "owner" } })));
+  let name = "Friday";
+  await page.route("**/rest/v1/rpc/my_races", r => r.fulfill({ json: [{ id: "race", name, timezone: "America/New_York", role: "owner", state: "active" }] }));
+  await page.route("**/rest/v1/rpc/my_race_invitations", r => r.fulfill({ json: [] }));
+  await page.route("**/rest/v1/rpc/rename_race", r => { const body = r.request().postDataJSON(); expect(body.p_expected_name).toBe("Friday"); name = body.p_name; return r.fulfill({ status: 204 }); });
+  const attempts: Record<string, unknown>[] = [];
+  await page.route("**/rest/v1/rpc/create_race", r => { attempts.push(r.request().postDataJSON()); return attempts.length === 1 ? r.fulfill({ status: 503, json: { message: "Unavailable" } }) : r.fulfill({ json: attempts[0].p_id }); });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Rename Race", exact: true }).click();
+  await page.getByLabel("Race name", { exact: true }).fill("Friday 5K");
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm rename" }).click();
+  await expect(page.getByRole("heading", { name: "Friday 5K" })).toBeVisible();
+  await page.getByRole("button", { name: "Create New Race", exact: true }).click();
+  await page.getByLabel("Race name", { exact: true }).fill("Saturday 10K");
+  await page.getByLabel("Starting layout").selectOption("race");
+  await page.getByRole("dialog").evaluate(async element => { await Promise.all(element.getAnimations().map(animation => animation.finished)); });
+  await page.screenshot({ path: `test-results/race-management-${width}.png`, fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  expect(attempts).toHaveLength(0);
+  await page.getByRole("button", { name: "Confirm new race" }).click();
+  await expect(page.getByRole("alert")).toContainText("Save not confirmed");
+  await page.getByRole("button", { name: "Confirm new race" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(attempts[0]).toEqual(attempts[1]);
+  expect(attempts[0]).toMatchObject({ p_name: "Saturday 10K", p_source: "race" });
+});

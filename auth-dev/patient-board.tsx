@@ -10,6 +10,7 @@ import { createPatientId } from "./patient-id";
 import { useAutoRefresh } from "./auto-refresh";
 import { ManageTeam } from "./manage-team";
 import { EndRace } from "./end-race";
+import { RaceEditor } from "./race-editor";
 
 type Visit = { id: string; revision: number; bib: string; triage: Triage; complaint: string; notes: string; source: string; eta: string;
   medical_started_at: string | null; dispositioned_at: string | null; disposition: DispositionCategory; other_disposition: string | null };
@@ -17,7 +18,7 @@ type Placement = { visit_id: string; bed_id: string; started_at: string; ended_a
 type Snapshot = { pods: Pod[]; visits: Visit[]; placements: Placement[]; reservations?: { visit_id: string; bed_id: string }[]; turnovers: { id: string; bed_id: string }[] };
 
 export function PatientBoard({ client, race, onBack }: {
-  client: SupabaseClient; race: { id: string; name: string; state: string; role: string }; onBack: () => void;
+  client: SupabaseClient; race: { id: string; name: string; timezone: string; state: string; role: string }; onBack: () => void;
 }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -26,6 +27,7 @@ export function PatientBoard({ client, race, onBack }: {
   const [editingPod, setEditingPod] = useState<Pod | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const lock = useRef(false);
   const alive = useRef(true);
   const createId = useRef<string | null>(null);
@@ -112,7 +114,7 @@ export function PatientBoard({ client, race, onBack }: {
   }) })) : [];
   const settings = race.role === "owner" && race.state === "active" ? <details className="relative">
     <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded border px-3"><Settings size={16} />Race Settings</summary>
-    <div className="absolute right-0 top-full z-20 w-64 rounded border bg-card p-3 shadow-xl"><AddPods client={client} raceId={race.id} pods={snapshot?.pods ?? []} onSaved={() => { void refresh(); }} /><button className="mt-2 min-h-11 w-full rounded border px-3" onClick={() => setTeamOpen(true)}>Manage Team</button></div>
+    <div className="absolute right-0 top-full z-20 w-64 rounded border bg-card p-3 shadow-xl"><AddPods client={client} raceId={race.id} pods={snapshot?.pods ?? []} onSaved={() => { void refresh(); }} /><button className="mt-2 min-h-11 w-full rounded border px-3" onClick={() => setTeamOpen(true)}>Manage Team</button><button className="mt-2 min-h-11 w-full rounded border px-3" onClick={() => setRenameOpen(true)}>Rename Race</button></div>
   </details> : null;
   return <section className="grid gap-3">
     <div className="flex gap-3">
@@ -133,6 +135,7 @@ export function PatientBoard({ client, race, onBack }: {
       </div>}
     {editingPod && <EditPod key={editingPod.id} client={client} pod={editingPod} onClose={() => setEditingPod(null)} onSaved={() => { void refresh(); }} />}
     {teamOpen && race.role === "owner" && <ManageTeam client={client} raceId={race.id} onClose={() => setTeamOpen(false)} />}
+    {renameOpen && race.role === "owner" && <RaceEditor client={client} race={race} onClose={() => setRenameOpen(false)} onSaved={onBack} />}
     {endOpen && race.role === "owner" && <EndRace client={client} raceId={race.id} raceName={race.name} onClose={() => { setEndOpen(false); void refresh(); }} onChanged={onBack} />}
   </section>;
 }

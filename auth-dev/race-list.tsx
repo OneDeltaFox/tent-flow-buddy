@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
+import { RaceEditor } from "./race-editor";
 import { RaceLayout } from "./race-layout";
 import { PatientBoard } from "./patient-board";
 import { Invitations } from "./invitations";
@@ -13,6 +14,8 @@ export function RaceList({ client }: { client: SupabaseClient }) {
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<Race | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [renaming, setRenaming] = useState<Race | null>(null);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -36,8 +39,9 @@ export function RaceList({ client }: { client: SupabaseClient }) {
     ? <RaceLayout key={selected.id} client={client} race={selected} onBack={() => setSelected(null)} />
     : <PatientBoard key={selected.id} client={client} race={selected} onBack={() => { setSelected(null); setAttempt(value => value + 1); }} />;
   return <div className="grid gap-3" aria-label="Your races">
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <h3 className="text-lg font-semibold">Your races</h3>
+      {races.some(race => race.role === "owner") && <button className="flex min-h-12 items-center gap-2 rounded border px-4" onClick={() => setCreating(true)}><Plus size={18} />Create New Race</button>}
       <button type="button" title="Refresh races" aria-label="Refresh races" disabled={loading}
         onClick={() => setAttempt(value => value + 1)}
         className="flex h-12 w-12 items-center justify-center rounded border border-border disabled:opacity-50">
@@ -52,7 +56,10 @@ export function RaceList({ client }: { client: SupabaseClient }) {
           <p className="capitalize">{race.role} · {race.state}</p>
           <p className="text-sm text-muted-foreground">{race.timezone}</p>
           <button type="button" onClick={() => setSelected(race)} className="mt-3 min-h-12 rounded border border-border px-4 py-2">Open board</button>
+          {race.role === "owner" && <button type="button" onClick={() => setRenaming(race)} className="ml-2 mt-3 min-h-12 rounded border px-4 py-2">Rename Race</button>}
         </li>)}</ul>}
     <Invitations client={client} onAccepted={() => setAttempt(value => value + 1)} />
+    {(creating || renaming) && <RaceEditor client={client} race={renaming ?? undefined} sources={races.filter(race => race.role === "owner")}
+      onClose={() => { setCreating(false); setRenaming(null); }} onSaved={() => setAttempt(value => value + 1)} />}
   </div>;
 }
