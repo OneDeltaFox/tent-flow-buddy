@@ -55,6 +55,25 @@ export function StatusBoard({
     0,
   );
   const saturation = capacity ? Math.round((occupied / capacity) * 100) : 0;
+  const metricGroups: { title: string; items: [string, number | string, string][] }[] = [
+    { title: "Overview", items: [
+      ["Census", metrics?.census ?? pods.flatMap(pod => pod.beds).filter(bed => bed.bib && !bed.reserved).length, "text-sky-300"],
+      ["Incoming", incomingCount, "text-violet-300"],
+      ...(metrics ? [["Seen today", metrics.seen, "text-foreground"] as [string, number, string]] : []),
+    ] },
+    { title: "Beds", items: [
+      ["Occupied beds", occupied, "text-amber-300"], ["Open beds", open, "text-emerald-300"],
+      ["Bed capacity", capacity, "text-foreground"], ["Bed saturation", `${saturation}%`, "text-sky-300"],
+    ] },
+    { title: "Pools", items: [
+      ["Occupied pools", occupiedPools, "text-amber-300"], ["Open pools", `${openPools} / ${availablePools.length}`, "text-emerald-300"],
+    ] },
+    ...(metrics ? [{ title: "Dispositions", items: [
+      ["Discharged", metrics.discharged, "text-emerald-300"],
+      ["EMS Transport", metrics.ems, "text-rose-300"],
+      ["Other", metrics.other, "text-foreground"],
+    ] as [string, number | string, string][] }] : []),
+  ];
   return (
     <div
       ref={root}
@@ -66,24 +85,6 @@ export function StatusBoard({
           <h1 className="break-words text-3xl font-semibold">{eventName}</h1>
           <p className="text-base text-muted-foreground">Status Board</p>
         </div>
-        <dl className="flex flex-wrap gap-5 font-mono">
-          {[
-            ["Census", metrics?.census ?? pods.flatMap(pod => pod.beds).filter(bed => bed.bib && !bed.reserved).length],
-            ["Occupied beds", occupied],
-            ["Open beds", open],
-            ["Bed capacity", capacity],
-            ["Bed saturation", `${saturation}%`],
-            ["Occupied pools", occupiedPools],
-            ["Open pools", `${openPools} / ${availablePools.length}`],
-            ["Incoming", incomingCount],
-            ...(metrics ? [["Seen today", metrics.seen], ["Discharged", metrics.discharged], ["EMS Transport", metrics.ems], ["Other", metrics.other]] : []),
-          ].map(([label, value]) => (
-            <div key={label}>
-              <dt className="text-base text-muted-foreground">{label}</dt>
-              <dd className="text-4xl font-bold">{value}</dd>
-            </div>
-          ))}
-        </dl>
         <div className="flex items-center gap-2">
           <time className="mr-2 font-mono text-3xl font-bold">
             {new Date(now).toLocaleTimeString("en-GB", {
@@ -120,6 +121,17 @@ export function StatusBoard({
           </button>
         </div>
       </header>
+      <div className="mb-5 grid grid-cols-1 divide-y divide-border border-b border-border xl:grid-cols-[3fr_4fr_2fr_3fr] xl:divide-x xl:divide-y-0">
+        {metricGroups.map(group => <section key={group.title} aria-label={group.title} className="min-w-0 px-3 py-4 first:pl-0">
+          <h3 className="mb-3 text-base font-semibold uppercase text-muted-foreground">{group.title}</h3>
+          <dl className="grid grid-cols-[repeat(auto-fit,minmax(110px,1fr))] gap-x-4 gap-y-3">
+            {group.items.map(([label, value, color]) => <div key={label} className="min-w-0">
+              <dt className="min-h-12 break-words text-base text-muted-foreground">{label}</dt>
+              <dd className={`break-words font-mono text-3xl font-bold tabular-nums sm:text-4xl ${color}`}>{value}</dd>
+            </div>)}
+          </dl>
+        </section>)}
+      </div>
       {fullscreenError && (
         <p role="status" className="mb-3 text-sm">
           {fullscreenError}
