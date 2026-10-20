@@ -1,5 +1,32 @@
 import { test, expect } from "@playwright/test";
 
+test("closed races can be archived, reused and restored with confirmation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth", JSON.stringify({ access_token: "token", refresh_token: "refresh", token_type: "bearer", expires_at: Math.floor(Date.now()/1000)+3600, user: { id: "owner" } })));
+  let archived = false, writes = 0;
+  await page.route("**/rest/v1/rpc/my_races", r => r.fulfill({ json: [{ id: "race", name: "Friday", timezone: "UTC", role: "owner", state: "closed", archived }] }));
+  await page.route("**/rest/v1/rpc/my_race_invitations", r => r.fulfill({ json: [] }));
+  await page.route("**/rest/v1/rpc/set_race_archived", r => { writes++; archived = r.request().postDataJSON().p_archived; return r.fulfill({ status: 204 }); });
+  await page.goto("/");
+  page.once("dialog", d => d.dismiss());
+  await page.getByRole("button", { name: "Archive Race", exact: true }).click();
+  expect(writes).toBe(0);
+  page.once("dialog", d => d.accept());
+  await page.getByRole("button", { name: "Archive Race", exact: true }).click();
+  await expect(page.getByText("All your races are archived.")).toBeVisible();
+  await page.getByLabel("Show archived races").check();
+  await expect(page.getByRole("button", { name: "Restore Race" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open board" })).toHaveCount(0);
+  await page.screenshot({ path: "test-results/archive-phone.png", fullPage: true });
+  await page.getByRole("button", { name: "Create New Race" }).click();
+  await page.getByLabel("Starting layout").selectOption("race");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  page.once("dialog", d => d.accept());
+  await page.getByRole("button", { name: "Restore Race" }).click();
+  await expect(page.getByRole("button", { name: "Archive Race", exact: true })).toBeVisible();
+  expect(writes).toBe(2);
+});
+
 for (const width of [390, 1280]) test(`owner race management at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
   await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth", JSON.stringify({ access_token: "token", refresh_token: "refresh", token_type: "bearer", expires_at: Math.floor(Date.now()/1000)+3600, user: { id: "owner" } })));

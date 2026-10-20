@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Plus, RefreshCw } from "lucide-react";
 import { RaceEditor } from "./race-editor";
@@ -6,7 +6,7 @@ import { RaceLayout } from "./race-layout";
 import { PatientBoard } from "./patient-board";
 import { Invitations } from "./invitations";
 
-type Race = { id: string; name: string; timezone: string; state: string; role: string };
+type Race = { id: string; name: string; timezone: string; state: string; role: string; archived?: boolean };
 
 export function RaceList({ client }: { client: SupabaseClient }) {
   const [races, setRaces] = useState<Race[]>([]);
@@ -16,6 +16,24 @@ export function RaceList({ client }: { client: SupabaseClient }) {
   const [selected, setSelected] = useState<Race | null>(null);
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<Race | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState("");
+  const archiveLock = useRef(false);
+  async function archive(race: Race) {
+    if (archiveLock.current || !window.confirm(race.archived
+      ? `Restore "${race.name}" to the race list? It will remain closed.`
+      : `Archive "${race.name}"? It will be hidden from the default race list for the team. Nothing is deleted, and you can restore it later.`)) return;
+    archiveLock.current = true; setArchiving(true); setArchiveError("");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    try {
+      const result = await client.rpc("set_race_archived", { p_race: race.id, p_archived: !race.archived }).abortSignal(controller.signal);
+      if (result.error) throw result.error;
+      setAttempt(value => value + 1);
+    } catch { setArchiveError("Archive change not confirmed. Refresh the race list and check before retrying. Only owners can archive closed races."); }
+    finally { window.clearTimeout(timeout); archiveLock.current = false; setArchiving(false); }
+  }
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -48,14 +66,18 @@ export function RaceList({ client }: { client: SupabaseClient }) {
         <RefreshCw size={18} />
       </button>
     </div>
+    <label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} />Show archived races</label>
+    {archiveError && <p role="alert">{archiveError}</p>}
+    {!loading && !error && races.length > 0 && races.every(race => race.archived) && !showArchived && <p role="status">All your races are archived.</p>}
     {loading ? <p role="status">Loading races...</p> : error ?
       <p role="alert">Unable to load races. Refresh to retry.</p> : races.length === 0 ?
         <p role="status">No races assigned to your account.</p> :
-        <ul className="divide-y divide-border">{races.map(race => <li key={race.id} className="py-4">
+        <ul className="divide-y divide-border">{races.filter(race => showArchived || !race.archived).map(race => <li key={race.id} className="py-4">
           <h4 className="break-words font-semibold">{race.name}</h4>
-          <p className="capitalize">{race.role} · {race.state}</p>
+          <p className="capitalize">{race.role} · {race.archived ? "Archived" : race.state}</p>
           <p className="text-sm text-muted-foreground">{race.timezone}</p>
-          <button type="button" onClick={() => setSelected(race)} className="mt-3 min-h-12 rounded border border-border px-4 py-2">Open board</button>
+          {!race.archived && <button type="button" onClick={() => setSelected(race)} className="mt-3 min-h-12 rounded border border-border px-4 py-2">Open board</button>}
+          {race.role === "owner" && race.state === "closed" && <button type="button" disabled={archiving} onClick={() => void archive(race)} className="ml-2 mt-3 min-h-12 rounded border px-4 py-2 disabled:opacity-50">{race.archived ? "Restore Race" : "Archive Race"}</button>}
           {race.role === "owner" && <button type="button" onClick={() => setRenaming(race)} className="ml-2 mt-3 min-h-12 rounded border px-4 py-2">Rename Race</button>}
         </li>)}</ul>}
     <Invitations client={client} onAccepted={() => setAttempt(value => value + 1)} />

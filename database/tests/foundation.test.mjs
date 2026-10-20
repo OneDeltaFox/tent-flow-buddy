@@ -60,6 +60,28 @@ test('database foundation', async (t) => {
   const transition=(user,v,revision,action,destination=null,category=null,other=null)=>asUser(user,
     'select race_private.transition_visit($1,$2,$3,$4,$5,$6)',[v,revision,action,destination,category,other]);
 
+  await t.test('archiving requires ownership and closed state, preserves layout and supports restoration', async()=>{
+    const archivedRace=id(980), copy=id(981);
+    await asUser(owner,'select public.create_race($1,$2,$3,$4)',[archivedRace,'Archive test','UTC',race]);
+    await assert.rejects(asUser(owner,'select public.set_race_archived($1,true)',[archivedRace]),/Only closed/);
+    await query("update race_private.races set state='closed' where id=$1",[archivedRace]);
+    for(const user of [editor,viewer,outsider]) await assert.rejects(asUser(user,'select public.set_race_archived($1,true)',[archivedRace]),/Access denied/);
+    await asUser(owner,'select public.set_race_archived($1,true)',[archivedRace]);
+    await asUser(owner,'select public.set_race_archived($1,true)',[archivedRace]);
+    assert.equal((await asUser(owner,'select * from public.my_races()')).rows.find(r=>r.id===archivedRace).archived,true);
+    await assert.rejects(query("update race_private.races set state='active' where id=$1",[archivedRace]),/archived_race_closed/);
+    await asUser(owner,'select public.create_race($1,$2,$3,$4)',[copy,'Copied archive','UTC',archivedRace]);
+    assert.equal((await query('select count(*)::int n from race_private.pods where race_id=$1',[copy])).rows[0].n,3);
+    await asUser(owner,'select public.set_race_archived($1,false)',[archivedRace]);
+    assert.equal((await query('select state,archived from race_private.races where id=$1',[archivedRace])).rows[0].state,'closed');
+    assert.equal((await query('select archived from race_private.races where id=$1',[archivedRace])).rows[0].archived,false);
+    for(const rid of [copy,archivedRace]) {
+      await query('delete from race_private.beds where race_id=$1',[rid]);
+      await query('delete from race_private.pods where race_id=$1',[rid]);
+      await query('delete from race_private.races where id=$1',[rid]);
+    }
+  });
+
   await t.test('owner race creation copies only ready layout and supports safe retries and rename', async()=>{
     const next=id(970);
     for (const user of [editor,viewer]) {
@@ -236,7 +258,7 @@ test('database foundation', async (t) => {
       assert.equal(rows.length,1);
       assert.equal(rows[0].id,expectedRace);
       assert.equal(rows[0].role,role);
-      assert.deepEqual(Object.keys(rows[0]).sort(),['id','name','role','state','timezone']);
+      assert.deepEqual(Object.keys(rows[0]).sort(),['archived','id','name','role','state','timezone']);
     }
     assert.equal((await asUser(id(999),'select * from public.my_races()')).rows.length,0);
     await exec('set role anon');
