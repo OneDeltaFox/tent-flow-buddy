@@ -34,9 +34,12 @@ test("restores a session without granting race access and signs out", async ({ p
     { id: "test-race", name: "Development Test Race", role: "owner", state: "active", timezone: "America/New_York" },
   ] }));
   await page.goto("/");
+  await page.getByRole("button", { name: "Account menu" }).click();
   await expect(page.getByText("tester@example.com", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByText("Development Test Race", { exact: true })).toBeVisible();
-  await expect(page.getByText("owner · active", { exact: true })).toBeVisible();
+  await expect(page.getByText("owner", { exact: true })).toBeVisible();
+  await expect(page.getByText("active", { exact: true })).toBeVisible();
   await page.route("**/rest/v1/rpc/patient_board", route => route.fulfill({ json: { visits: [], placements: [], turnovers: [], pods: [
     { id: "pod", name: "Pod 1", color: "#ffcc00", kind: "regular", closed: false, capabilities: ["Cooling"],
       beds: [{ id: "bed", label: "1-1", status: "cleaning" }] },
@@ -71,7 +74,8 @@ test("restores a session without granting race access and signs out", async ({ p
   await page.route("**/rest/v1/rpc/patient_board", route => route.fulfill({ status: 403, json: { message: "Access denied" } }));
   await page.getByRole("button", { name: "Refresh board" }).click();
   await expect(page.getByRole("alert")).toContainText("Unable to load patient records");
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
   await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
   await expect(page.getByText("Development Test Race", { exact: true })).not.toBeVisible();
 });

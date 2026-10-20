@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient, type Session } from "@supabase/supabase-js";
-import { LogIn, LogOut } from "lucide-react";
+import { LogIn, LogOut, UserRound, KeyRound, Activity } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { RaceList } from "./race-list";
 import "./styles.css";
 
@@ -137,16 +138,18 @@ function SignIn() {
   const button = "inline-flex min-h-12 items-center justify-center gap-2 rounded border border-foreground bg-foreground px-4 py-3 font-semibold text-background disabled:opacity-50";
   return (
     <main className="min-h-dvh bg-background text-foreground">
-      <header className="border-b border-border px-6 py-5">
-        <h1 className="text-2xl font-bold">TriageDesk</h1>
-        <p className="text-sm text-muted-foreground">Development</p>
+      <header className="desk-header">
+        <h1 className="flex items-center gap-3 text-2xl font-bold"><Activity className="text-emerald-400" size={28} />TriageDesk</h1>
+        {session && <DropdownMenu><DropdownMenuTrigger asChild><button className="desk-icon" aria-label="Account menu" title="Account menu"><UserRound size={20} /></button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64"><DropdownMenuLabel className="break-all">{session.user.email}</DropdownMenuLabel><DropdownMenuSeparator />
+            <DropdownMenuItem className="min-h-11" disabled={busy} onSelect={() => { setEditingPassword(true); setError(""); setMessage(""); }}><KeyRound size={16} />Set or change password</DropdownMenuItem>
+            <DropdownMenuItem className="min-h-11" disabled={busy} onSelect={() => void signOut()}><LogOut size={16} />Sign out</DropdownMenuItem>
+          </DropdownMenuContent></DropdownMenu>}
       </header>
       <section className={`mx-auto grid w-full ${session ? "max-w-none px-2 py-4" : "max-w-md px-6 py-12"} gap-5`}>
-        <h2 className="text-xl font-semibold">{session ? "Account" : "Sign in"}</h2>
-        {!session && <p className="text-sm text-muted-foreground">Day-of-event coordination for race medical teams: patient locations, bed and pool capacity, and live timing.</p>}
-        {!client ? <p role="status">Development sign-in is not configured.</p> : loading ?
+        {!session && <h2 className="text-2xl font-semibold">Sign in to TriageDesk</h2>}
+        {!client ? <p role="status">Sign-in is not configured.</p> : loading ?
           <p role="status">Checking session...</p> : session ? <>
-            <p className="break-all">{session.user.email}</p>
             {editingPassword ? <form onSubmit={savePassword} className="grid w-full max-w-md gap-4">
               <label className="grid gap-2">New password
                 <input type="password" required minLength={12} autoComplete="new-password" value={password} disabled={busy}
@@ -159,9 +162,8 @@ function SignIn() {
               </label>
               <button className={button} disabled={busy}>Save password</button>
               <button type="button" disabled={busy} onClick={() => { setEditingPassword(false); setPassword(""); setConfirmation(""); }}>Cancel</button>
-            </form> : <button className={button} disabled={busy} onClick={() => { setEditingPassword(true); setError(""); setMessage(""); }}>Set or change password</button>}
+            </form> : null}
             <RaceList key={session.user.id} client={client} />
-            <button className={button} disabled={busy} onClick={signOut}><LogOut size={18} />Sign out</button>
           </> : <form onSubmit={signIn} className="grid gap-4">
             <label className="grid gap-2 font-medium">Email
               <input type="email" required autoComplete="email" value={email}
@@ -173,7 +175,7 @@ function SignIn() {
                 onChange={(event) => setPassword(event.target.value)} className="min-h-12 w-full rounded border border-border bg-background px-3" />
             </label>}
             <button className={button} disabled={busy}><LogIn size={18} />{busy ? "Please wait..." : mode === "password" ? "Sign in" : mode === "reset" ? "Send password reset link" : "Send sign-in link"}</button>
-            {googleEnabled && <button type="button" className={button} disabled={busy} onClick={googleSignIn}>Continue with Google</button>}
+            {googleEnabled && <button type="button" className="desk-secondary" disabled={busy} onClick={googleSignIn}>Continue with Google</button>}
             {([ ["password", "Use password"], ["link", "Email me a sign-in link"], ["reset", "Forgot password?"] ] as const).filter(([value]) => value !== mode).map(([value, label]) =>
               <button type="button" key={value} disabled={busy} className="min-h-12 underline" onClick={() => { setMode(value); setPassword(""); setError(""); setMessage(""); }}>{label}</button>)}
           </form>}

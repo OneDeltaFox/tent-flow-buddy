@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, MoreHorizontal, Pencil, Archive, ArchiveRestore, ArrowRight } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { RaceEditor } from "./race-editor";
 import { RaceLayout } from "./race-layout";
 import { PatientBoard } from "./patient-board";
@@ -56,10 +57,10 @@ export function RaceList({ client }: { client: SupabaseClient }) {
   if (selected) return selected.role === "viewer"
     ? <RaceLayout key={selected.id} client={client} race={selected} onBack={() => setSelected(null)} />
     : <PatientBoard key={selected.id} client={client} race={selected} onBack={() => { setSelected(null); setAttempt(value => value + 1); }} />;
-  return <div className="grid gap-3" aria-label="Your races">
+  return <div className="race-home" aria-label="Your races">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h3 className="text-lg font-semibold">Your races</h3>
-      {races.some(race => race.role === "owner") && <button className="flex min-h-12 items-center gap-2 rounded border px-4" onClick={() => setCreating(true)}><Plus size={18} />Create New Race</button>}
+      <h3 className="text-2xl font-semibold">Your races</h3>
+      {races.some(race => race.role === "owner") && <button className="desk-primary ml-auto" onClick={() => setCreating(true)}><Plus size={18} />Create New Race</button>}
       <button type="button" title="Refresh races" aria-label="Refresh races" disabled={loading}
         onClick={() => setAttempt(value => value + 1)}
         className="flex h-12 w-12 items-center justify-center rounded border border-border disabled:opacity-50">
@@ -72,13 +73,18 @@ export function RaceList({ client }: { client: SupabaseClient }) {
     {loading ? <p role="status">Loading races...</p> : error ?
       <p role="alert">Unable to load races. Refresh to retry.</p> : races.length === 0 ?
         <p role="status">No races assigned to your account.</p> :
-        <ul className="divide-y divide-border">{races.filter(race => showArchived || !race.archived).map(race => <li key={race.id} className="py-4">
+        <ul className="divide-y divide-border border-y border-border">{races.filter(race => showArchived || !race.archived).map(race => <li key={race.id} className="race-home-row">
+          <div className="min-w-0 flex-1">
           <h4 className="break-words font-semibold">{race.name}</h4>
-          <p className="capitalize">{race.role} · {race.archived ? "Archived" : race.state}</p>
-          <p className="text-sm text-muted-foreground">{race.timezone}</p>
-          {!race.archived && <button type="button" onClick={() => setSelected(race)} className="mt-3 min-h-12 rounded border border-border px-4 py-2">Open board</button>}
-          {race.role === "owner" && race.state === "closed" && <button type="button" disabled={archiving} onClick={() => void archive(race)} className="ml-2 mt-3 min-h-12 rounded border px-4 py-2 disabled:opacity-50">{race.archived ? "Restore Race" : "Archive Race"}</button>}
-          {race.role === "owner" && <button type="button" onClick={() => setRenaming(race)} className="ml-2 mt-3 min-h-12 rounded border px-4 py-2">Rename Race</button>}
+          <p className="mt-2 flex items-center gap-3 text-sm capitalize"><span className={`race-state ${race.archived ? "" : race.state === "active" ? "race-state-active" : "race-state-closed"}`}>{race.archived ? "Archived" : race.state}</span><span className="text-muted-foreground">{race.role}</span></p>
+          <p className="mt-2 text-xs text-muted-foreground">{race.timezone}</p></div>
+          <div className="flex items-center gap-2">
+          {!race.archived && <button type="button" onClick={() => setSelected(race)} className="desk-secondary">Open board<ArrowRight size={16} /></button>}
+          {race.role === "owner" && <DropdownMenu><DropdownMenuTrigger asChild><button className="desk-icon" aria-label={`Race options for ${race.name}`} title="Race options"><MoreHorizontal size={20} /></button></DropdownMenuTrigger><DropdownMenuContent align="end">
+            <DropdownMenuItem className="min-h-11" onSelect={() => setRenaming(race)}><Pencil size={16} />Rename Race</DropdownMenuItem>
+            {race.state === "closed" && <DropdownMenuItem className="min-h-11" disabled={archiving} onSelect={() => void archive(race)}>{race.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}{race.archived ? "Restore Race" : "Archive Race"}</DropdownMenuItem>}
+          </DropdownMenuContent></DropdownMenu>}
+          </div>
         </li>)}</ul>}
     <Invitations client={client} onAccepted={() => setAttempt(value => value + 1)} />
     {(creating || renaming) && <RaceEditor client={client} race={renaming ?? undefined} sources={races.filter(race => race.role === "owner")}
