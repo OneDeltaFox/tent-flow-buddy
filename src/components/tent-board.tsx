@@ -408,9 +408,8 @@ function ComplaintField({
           onChange={(e) => onChoiceChange(e.target.value)}
           aria-label="Chief complaint"
           className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-signal"
-          required
         >
-          <option value="">Chief complaint</option>
+          <option value="">Not specified</option>
           {complaintOptions.map((complaint) => (
             <option key={complaint} value={complaint}>
               {complaint}
@@ -1117,7 +1116,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
 
     const bib = newPatientBib.trim();
     const complaint = complaintFromSelection(newPatientComplaintChoice, newPatientOtherComplaint);
-    if (!bib || !complaint) return;
+    if (!bib || (newPatientComplaintChoice === otherComplaintValue && !complaint)) return;
     setNewPatientMessage("");
 
     const patient: Incoming = {

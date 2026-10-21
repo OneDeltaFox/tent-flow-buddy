@@ -3,6 +3,34 @@ import { ArrowLeft, Maximize } from "lucide-react";
 import type { Bed, Pod } from "@/lib/tent-data";
 import { isPoolPod } from "@/lib/tent-data";
 
+function podTextColor(color: string): string {
+  const hex = /^#[0-9a-f]{6}$/i.test(color) ? color.slice(1) : "ffffff";
+  const rgb = [0, 2, 4].map(offset => {
+    const channel = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = rgb[0]! * 0.2126 + rgb[1]! * 0.7152 + rgb[2]! * 0.0722;
+  return luminance > 0.179 ? "#000000" : "#ffffff";
+}
+
+function RaceNumber({ bib }: { bib: string }) {
+  const label = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const element = label.current;
+    if (!element) return;
+    const fit = () => {
+      element.style.fontSize = "40px";
+      const width = element.scrollWidth;
+      element.style.fontSize = `${Math.min(40, 40 * element.clientWidth / Math.max(width, 1))}px`;
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(element.parentElement!);
+    fit();
+    return () => observer.disconnect();
+  }, [bib]);
+  return <span ref={label} className="status-race-number">{bib}</span>;
+}
+
 function elapsedTime(arrivedAt: number | undefined, now: number): string {
   if (arrivedAt === undefined || !Number.isFinite(arrivedAt) || arrivedAt > now) return "--:--";
   const seconds = Math.floor((now - arrivedAt) / 1000);
@@ -77,7 +105,7 @@ export function StatusBoard({
   return (
     <div
       ref={root}
-      className="min-h-screen overflow-auto bg-background p-3 text-foreground sm:p-4"
+      className="status-display min-h-screen overflow-auto bg-background p-3 text-foreground sm:p-4"
       data-testid="status-board"
     >
       <header className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-3">
@@ -137,42 +165,41 @@ export function StatusBoard({
           {fullscreenError}
         </p>
       )}
-      <main className="grid grid-cols-2 items-start gap-2 sm:grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] sm:gap-4">
+      <main className="grid grid-cols-2 items-start gap-2 sm:grid-cols-[repeat(auto-fill,minmax(min(100%,250px),1fr))]">
         {[...pods].sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })).map((pod) => (
           <section
             key={pod.id}
-            className="min-w-0 rounded-md border-2 border-t-4 bg-card p-1.5 sm:p-3"
-            style={{ borderColor: pod.color }}
+            className="min-w-0 rounded-md border-2 border-t-4 bg-card p-1.5 sm:p-2"
+            style={{ borderColor: pod.color, backgroundColor: pod.color, color: podTextColor(pod.color) }}
           >
-            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-1 border-b border-border pb-1 sm:mb-3 sm:pb-2">
-              <h2 className="min-w-0 break-words text-base font-bold sm:text-2xl">{pod.name}</h2>
-              <span className="text-xs font-semibold text-foreground sm:text-lg">
+            <div className="mb-1 flex flex-wrap items-baseline justify-between gap-1 border-b border-border pb-1">
+              <h2 className="min-w-0 break-words text-2xl font-bold sm:text-3xl">{pod.name}</h2>
+              <span className="text-xs font-semibold sm:text-lg">
                 {pod.closed
                   ? "Closed"
                   : `${pod.beds.filter((bed) => bed.bib).length}/${pod.beds.length}`}
               </span>
             </div>
-            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 sm:gap-2">
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
               {[...pod.beds].sort((a,b) => a.label.localeCompare(b.label, undefined, { numeric: true })).map((bed) => (
                 <div key={bed.id} className="min-w-0">
                   <div
-                    className={`flex h-12 min-w-0 flex-col items-center justify-center rounded-sm border px-1 text-center font-mono text-base font-bold sm:h-16 sm:text-2xl ${bedTone(bed)}`}
+                    className={`status-bed flex h-14 min-w-0 flex-col items-center justify-center rounded-sm border px-1 text-center font-mono text-xl font-bold sm:text-2xl ${bedTone(bed)}`}
+                    data-triage={bed.bib ? bed.triage ?? "untriaged" : undefined}
+                    data-state={bed.bib ? "occupied" : bed.status}
                     title={bed.bib ? `Race #${bed.bib}, bed ${bed.label}` : bed.label}
                   >
-                    <span className="max-w-full truncate">
-                      {bed.bib
-                        ? `#${bed.bib}`
-                        : bed.status === "cleaning"
+                    {bed.bib ? <RaceNumber bib={bed.bib} /> : <span className="max-w-full truncate">
+                      {bed.status === "cleaning"
                           ? "Cleaning"
                           : pod.closed
                             ? "Closed"
                             : bed.label}
-                    </span>
+                    </span>}
                     {bed.reserved && <span className="text-xs sm:text-base">In pool</span>}
                   </div>
-                  {bed.bib && <p className="break-words text-center text-xs font-semibold sm:min-h-12 sm:text-lg">{bed.complaint}</p>}
                   <div
-                    className="h-5 text-center font-mono text-xs font-semibold leading-5 tabular-nums sm:h-8 sm:text-lg sm:leading-8"
+                    className="h-6 text-center font-mono text-sm font-bold leading-6 tabular-nums sm:h-7 sm:text-xl sm:leading-7"
                     title={
                       bed.bib
                         ? "Elapsed time since first bed assignment (hours:minutes:seconds)"

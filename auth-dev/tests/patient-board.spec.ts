@@ -41,10 +41,9 @@ test("connected intake, assignment, edit, disposition and turnover use RPCs with
   await page.getByRole("button",{name:"New Patient",exact:true}).click();
   let modal=page.getByRole("dialog");
   await modal.getByLabel("Race #",{exact:true}).fill("TEST-1");
-  await modal.getByRole("combobox").filter({has:page.locator('option[value="Dizziness"]')}).selectOption("Dizziness");
   await modal.getByRole("button",{name:"Add",exact:true}).click();
   await expect(modal).toHaveCount(0);
-  expect(saves[0]).toMatchObject({p_revision:null,p_bed:null,p_details:{triage:"untriaged"}});
+  expect(saves[0]).toMatchObject({p_revision:null,p_bed:null,p_details:{triage:"untriaged",complaint:""}});
   await page.getByRole("button",{name:/Incoming \(1\)/}).click();
   await page.getByRole("button",{name:"Edit patient TEST-1",exact:true}).click();
   await modal.getByLabel("Move to pod").selectOption("pod");
