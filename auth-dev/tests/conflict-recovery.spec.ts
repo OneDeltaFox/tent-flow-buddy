@@ -50,6 +50,7 @@ test("offline board blocks interaction and recovers without replaying writes", a
   let writes = 0;
   await page.route("**/rest/v1/rpc/**", route => {
     const endpoint = route.request().url().split("/").pop();
+    if (endpoint === "my_race_invitations") return route.fulfill({ json: [] });
     if (endpoint === "my_races") return route.fulfill({ json: [{ id: "race", name: "Offline Test", role: "owner", state: "active" }] });
     if (endpoint === "patient_board") return disconnected ? route.abort("internetdisconnected") : route.fulfill({ json: { pods: [], visits: [], placements: [], turnovers: [] } });
     writes++;
