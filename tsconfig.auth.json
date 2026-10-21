@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["auth-dev/**/*.ts", "auth-dev/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "vite.auth.config.ts"]
+}

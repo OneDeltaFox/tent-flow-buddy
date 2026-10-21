@@ -1,0 +1,23 @@
+@import "../src/styles.css";
+@source "./main.tsx";
+@source "./race-list.tsx";
+@source "./race-layout.tsx";
+@source "./add-pods.tsx";
+@source "./patient-board.tsx";
+@source "./edit-pod.tsx";
+@source "./race-editor.tsx";
+
+.desk-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 28px; border-bottom:1px solid var(--border); }
+.desk-icon { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex-shrink:0; border:1px solid var(--border); border-radius:6px; }
+.desk-primary,.desk-secondary { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:10px 16px; border-radius:6px; font-weight:600; }
+.desk-primary { background:#6ee7b7; color:#10251c; border:1px solid #6ee7b7; }
+.desk-secondary { border:1px solid var(--border); background:var(--card); }
+.desk-icon:hover,.desk-secondary:hover { background:var(--muted); }
+.race-home { width:100%; max-width:1040px; margin:24px auto 64px; padding:0 24px; display:grid; gap:24px; }
+.race-home-row { display:flex; align-items:center; gap:24px; padding:24px 0; }
+.race-home-row h4 { font-size:18px; }
+.race-state { display:inline-flex; align-items:center; gap:7px; color:#a1a1aa; }
+.race-state::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+.race-state-active { color:#6ee7b7; }
+.race-state-closed { color:#fcd34d; }
+@media(max-width:540px) { .desk-header { padding:16px; } .race-home { padding:0 8px; margin-top:12px; } .race-home-row { flex-wrap:wrap; gap:16px; } .race-home-row>div:first-child { flex-basis:100%; } }

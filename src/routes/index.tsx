@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TentBoard } from "@/components/tent-board";
 
-const title = "Race Medical Tent — Patient Flow & Bed Board";
+const title = "TriageDesk | Patient Flow & Bed Board";
 const description =
   "Live command whiteboard for a race medical tent: incoming runners, every pod and bed at a glance, pod capabilities and staffing, and where patients went.";
 

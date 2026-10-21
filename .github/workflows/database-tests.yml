@@ -1,0 +1,31 @@
+name: Database foundation tests
+on:
+  pull_request:
+    paths: ['database/**', '.github/workflows/database-tests.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: tent_flow_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+        working-directory: database
+      - run: npm test
+        working-directory: database
+        env:
+          DATABASE_TEST_URL: postgres://postgres:test-only-password@localhost:5432/tent_flow_test
