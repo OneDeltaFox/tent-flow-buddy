@@ -104,8 +104,9 @@ test("shared pod tiles are read-only and never load or overwrite demo data", asy
   await page.goto("/");
   await page.getByRole("button", { name: "Open board" }).click();
   await expect(page.getByTestId("status-board")).toBeVisible();
-  await expect(page.getByText("#VIEW-1", { exact: true })).toBeVisible();
-  await expect(page.getByText("Dizziness", { exact: true })).toBeVisible();
+  await expect(page.getByText("VIEW-1", { exact: true })).toBeVisible();
+  await expect(page.getByText("Dizziness", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("status-board")).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(page.getByText(/^Pool 00:/)).toBeVisible();
   await expect(page.getByTestId("status-board").getByRole("heading", { level: 2 })).toHaveText(["Pod 1", "Pod 2", "Pod 10"]);
   await expect(page.getByText("EMS Transport", { exact: true })).toBeVisible();
