@@ -158,6 +158,32 @@ test('database foundation', async (t) => {
       await assert.rejects(asUser(user,'select * from race_private.report_preview($1)',[race]),/permission denied/);
     }
   });
+  await t.test('full pod editor preserves assignments and rejects unsafe edits', async()=>{
+    const r=id(960), p=id(961), b=id(962), v=id(963);
+    await query("insert into race_private.races(id,owner_id,name) values($1,$2,'Pod edit fixture')",[r,owner]);
+    await query("insert into race_private.pods(id,race_id,name,color) values($1,$2,'Pod 1','#ff8800')",[p,r]);
+    await query("insert into race_private.beds(id,race_id,pod_id,label) values($1,$2,$3,'1-1')",[b,r,p]);
+    const expected=async()=> (await query("select jsonb_build_object('name',p.name,'color',p.color,'kind',p.kind,'closed',p.closed,'capabilities',p.capabilities,'beds',(select count(*) from race_private.beds where pod_id=p.id)) x from race_private.pods p where id=$1",[p])).rows[0].x;
+    const edit=(u,x,name='Pod 3',kind='regular',beds=2)=>asUser(u,'select public.edit_pod_settings($1,$2,$3,$4,$5,$6,$7,$8)',[p,x,name,'#ffff00',kind,beds,false,[]]);
+    const initial=await expected();
+    await assert.rejects(edit(editor,initial),/Access denied/);
+    await edit(owner,initial);
+    assert.equal((await query('select label from race_private.beds where id=$1',[b])).rows[0].label,'3-1');
+    assert.equal((await expected()).color,'#ffff00');
+    await assert.rejects(edit(owner,initial),/Pod changed/);
+    await edit(owner,await expected(),'Pod 3','regular',1);
+    await query('insert into race_private.visits(id,race_id) values($1,$2)',[v,r]);
+    await query("insert into race_private.placements(race_id,visit_id,bed_id,kind,started_at) values($1,$2,$3,'regular',clock_timestamp())",[r,v,b]);
+    await assert.rejects(edit(owner,await expected(),'Pool 3','pool',1),/Cannot change type/);
+    await edit(owner,await expected(),'Pod 4','regular',1);
+    assert.equal((await query('select bed_id from race_private.placements where visit_id=$1',[v])).rows[0].bed_id,b);
+    await edit(owner,await expected(),'Pod 4','regular',2);
+    await query("update race_private.beds set label='4-9' where id=$1",[b]);
+    await assert.rejects(edit(owner,await expected(),'Pod 4','regular',1),/Cannot remove used/);
+    for(const table of ['placements','visits','beds','pods']) await query(`delete from race_private.${table} where race_id=$1`,[r]);
+    await query('delete from race_private.races where id=$1',[r]);
+  });
+
   await t.test('clear-only preserves active race and pod settings, with guarded idempotent retries', async()=>{
     const r=id(950), p=id(951), b=id(952), v=id(953);
     await query("insert into race_private.races(id,owner_id,name) values($1,$2,'Clear fixture')",[r,owner]);

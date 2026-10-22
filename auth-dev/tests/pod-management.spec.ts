@@ -71,18 +71,24 @@ test("reserved bed displays In pool, counts once and returns to its exact bed", 
   await expect(page.getByText("In pool",{exact:true})).toHaveCount(0);
 });
 
-test("owner can confirm capabilities and close/reopen pods", async ({page})=>{
+for (const width of [390,1280]) test(`owner can confirm pod edits at ${width}px`, async ({page})=>{
+  await page.setViewportSize({width,height:844});
   const snapshot=await setup(page);
   let saves=0;
-  await page.route("**/rest/v1/rpc/update_pod",async route=>{
+  await page.route("**/rest/v1/rpc/edit_pod_settings",async route=>{
     const body=route.request().postDataJSON();
-    expect(body.p_expected).toEqual({name:"Pod 1",closed:snapshot.pods[0]!.closed,capabilities:snapshot.pods[0]!.capabilities});
+    expect(body.p_expected).toEqual({name:"Pod 1",color:snapshot.pods[0]!.color,kind:"regular",beds:1,closed:snapshot.pods[0]!.closed,capabilities:snapshot.pods[0]!.capabilities});
+    expect(body.p_color).toBe("#ffff00");
+    snapshot.pods[0]!.color=body.p_color;
     expect(body.p_pod).toBe("p1");
     snapshot.pods[0]!.closed=body.p_closed; snapshot.pods[0]!.capabilities=body.p_capabilities; saves++;
     await route.fulfill({json:null});
   });
   await page.getByRole("button",{name:"Edit Pod 1",exact:true}).click();
   const dialog=page.getByRole("dialog");
+  await dialog.getByLabel("Pod color",{exact:true}).fill("#ffff00");
+  await page.screenshot({path:`test-results/full-pod-editor-${width}.png`,fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await dialog.getByRole("button",{name:"Remove Cooling",exact:true}).click();
   await dialog.getByLabel("Capability",{exact:true}).fill("IV");
   await dialog.getByRole("button",{name:"Add capability",exact:true}).click();
