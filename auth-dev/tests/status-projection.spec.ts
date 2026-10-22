@@ -33,6 +33,8 @@ test("projection board fits race numbers and compact pods on desktop and mobile"
   await expect(board.getByText("Hidden complaint")).toHaveCount(0);
   for (const [width, height, name] of [[1920,1080,"desktop"], [375,812,"phone"]] as const) {
     await page.setViewportSize({ width, height });
+    const metricsHeight = await board.locator(".status-metrics").evaluate(element => element.getBoundingClientRect().height);
+    expect(metricsHeight).toBeLessThan(width === 1920 ? 120 : 290);
     await expect.poll(() => board.locator(".status-race-number").evaluateAll(elements =>
       elements.every(element => element.scrollWidth <= element.clientWidth+1))).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
