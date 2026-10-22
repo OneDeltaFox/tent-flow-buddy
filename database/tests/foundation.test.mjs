@@ -164,7 +164,7 @@ test('database foundation', async (t) => {
     await query("insert into race_private.pods(id,race_id,name,color) values($1,$2,'Pod 1','#ff8800')",[p,r]);
     await query("insert into race_private.beds(id,race_id,pod_id,label) values($1,$2,$3,'1-1')",[b,r,p]);
     const expected=async()=> (await query("select jsonb_build_object('name',p.name,'color',p.color,'kind',p.kind,'closed',p.closed,'capabilities',p.capabilities,'beds',(select count(*) from race_private.beds where pod_id=p.id)) x from race_private.pods p where id=$1",[p])).rows[0].x;
-    const edit=(u,x,name='Pod 3',kind='regular',beds=2)=>asUser(u,'select public.edit_pod_settings($1,$2,$3,$4,$5,$6,$7,$8)',[p,x,name,'#ffff00',kind,beds,false,[]]);
+    const edit=(u,x,name='Pod 3',kind='regular',beds=2)=>asUser(u,'select public.edit_pod_settings($1,$2,$3,$4,$5,$6,$7,$8)',[p,x,name,'#ffff00',kind,beds,false,JSON.stringify([])]);
     const initial=await expected();
     await assert.rejects(edit(editor,initial),/Access denied/);
     await edit(owner,initial);
