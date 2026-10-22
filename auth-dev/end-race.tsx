@@ -13,6 +13,8 @@ export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ended, setEnded] = useState(false);
+  const [mode, setMode] = useState<"end" | "clear">("end");
+  const phrase = mode === "clear" ? "CLEAR DATA" : "END RACE";
   const lock = useRef(false);
   const button = "min-h-11 rounded border px-3 disabled:opacity-50";
   async function request(name: string, args: Record<string, unknown>) {
@@ -38,10 +40,10 @@ export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
   }
   useEffect(() => { void load(); }, [client, raceId]);
   async function finish() {
-    if (lock.current || !preview?.report_free || confirm !== "END RACE" || (preview.active > 0 && !allowActive)) return;
+    if (lock.current || !preview?.report_free || confirm !== phrase || (preview.active > 0 && !allowActive)) return;
     lock.current = true; setBusy(true); setError("");
     try {
-      await request("end_race", { p_race: raceId, p_token: preview.token, p_generation: preview.generation, p_confirm: confirm, p_allow_active: allowActive });
+      await request(mode === "clear" ? "clear_race_patient_data" : "end_race", { p_race: raceId, p_token: preview.token, p_generation: preview.generation, p_confirm: confirm, p_allow_active: allowActive });
       setEnded(true); setPreview(null);
       await readPreview();
     } catch {
@@ -62,11 +64,16 @@ export function EndRace({ client, raceId, raceName, onClose, onChanged }: {
       <p className="break-words font-semibold">{raceName}</p>
       <DialogDescription>Patient details, movements, and timing histories will be permanently removed from the active database. No report will be saved. Beds and pools will be ready; the layout, capabilities, and team permissions will remain. Provider backups and previously exported copies are not erased.</DialogDescription>
       {error && <p role="alert">{error}</p>}
-      {ended ? <p role="status">Race ended. Patient data cleared. Layout ready for reuse.</p> : preview?.state === "active" && <>
+      {ended ? <p role="status">{mode === "clear" ? "Patient data cleared. Race remains active. Pod settings and team access preserved." : "Race ended. Patient data cleared. Layout ready for reuse."}</p> : preview?.state === "active" && <>
+        <fieldset disabled={busy} className="grid gap-2">
+          <legend className="mb-2 font-semibold">Action</legend>
+          <label className="flex gap-2"><input type="radio" name="reset-mode" checked={mode === "end"} onChange={() => { setMode("end"); setConfirm(""); setAllowActive(false); }} />End race and clear patient data</label>
+          <label className="flex gap-2"><input type="radio" name="reset-mode" checked={mode === "clear"} onChange={() => { setMode("clear"); setConfirm(""); setAllowActive(false); }} />Clear patient data only; keep race active</label>
+        </fieldset>
         <p>{preview.total} patient records; {preview.active} still active or incoming.</p>
         {preview.active > 0 && <label className="flex gap-2"><input type="checkbox" checked={allowActive} onChange={event => setAllowActive(event.target.checked)} />Clear patients who are still active or incoming too.</label>}
-        <label className="grid gap-1">Type END RACE to confirm<input className="min-h-11 rounded border bg-background p-2" value={confirm} onChange={event => setConfirm(event.target.value)} /></label>
-        <button className={`${button} bg-destructive text-destructive-foreground`} disabled={busy || confirm !== "END RACE" || (preview.active > 0 && !allowActive)} onClick={() => void finish()}>End Race and Delete Patient Data</button>
+        <label className="grid gap-1">Type {phrase} to confirm<input className="min-h-11 rounded border bg-background p-2" disabled={busy} value={confirm} onChange={event => setConfirm(event.target.value)} /></label>
+        <button className={`${button} bg-destructive text-destructive-foreground`} disabled={busy || confirm !== phrase || (preview.active > 0 && !allowActive)} onClick={() => void finish()}>{mode === "clear" ? "Clear Patient Data Only" : "End Race and Delete Patient Data"}</button>
       </>}
       {preview?.state === "closed" && preview.last_reset_id && <button className={button} disabled={busy} onClick={() => void startNextDay()}>Start Next Day With This Layout</button>}
       <button className={`${button} flex items-center justify-center gap-2`} disabled={busy} onClick={() => void load()}><RefreshCw size={16} />Refresh Status</button>
