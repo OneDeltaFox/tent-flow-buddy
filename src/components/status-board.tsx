@@ -149,13 +149,13 @@ export function StatusBoard({
           </button>
         </div>
       </header>
-      <div className="status-metrics mb-3 grid grid-cols-1 divide-y divide-border border-b border-border sm:mb-5 xl:grid-cols-[3fr_4fr_2fr_3fr] xl:divide-x xl:divide-y-0">
-        {metricGroups.map(group => <section key={group.title} aria-label={group.title} className="min-w-0 px-1 py-2 first:pl-0 sm:px-3 sm:py-4">
-          <h3 className="mb-1 text-xs font-semibold uppercase text-muted-foreground sm:mb-3 sm:text-base">{group.title}</h3>
-          <dl className="grid grid-cols-[repeat(auto-fit,minmax(72px,1fr))] gap-x-2 gap-y-1 sm:grid-cols-[repeat(auto-fit,minmax(110px,1fr))] sm:gap-x-4 sm:gap-y-3">
-            {group.items.map(([label, value, color]) => <div key={label} className="min-w-0">
-              <dt className="min-h-8 break-words text-xs text-muted-foreground sm:min-h-12 sm:text-base">{label}</dt>
-              <dd className={`break-words font-mono text-xl font-bold tabular-nums sm:text-4xl ${color}`}>{value}</dd>
+      <div className="status-metrics mb-2 grid grid-cols-2 gap-x-3 gap-y-2 border-b border-border pb-2 xl:grid-cols-[3fr_4fr_2fr_3fr] xl:gap-0 xl:divide-x xl:divide-border">
+        {metricGroups.map(group => <section key={group.title} aria-label={group.title} className="min-w-0 xl:px-3 xl:first:pl-0">
+          <h3 className="mb-1 text-sm font-bold uppercase text-muted-foreground xl:text-base">{group.title}</h3>
+          <dl className="grid gap-x-3 xl:grid-cols-[repeat(auto-fit,minmax(85px,1fr))]">
+            {group.items.map(([label, value, color]) => <div key={label} className="flex min-w-0 items-baseline justify-between gap-1 xl:block">
+              <dt aria-label={label} className="break-words text-sm font-semibold leading-tight xl:text-lg">{label.replace(/ beds| pools/g, "").replace("Bed capacity", "Capacity").replace("Bed saturation", "Saturation")}</dt>
+              <dd className={`break-words font-mono text-2xl font-bold leading-tight tabular-nums xl:text-[40px] ${color}`}>{value}</dd>
             </div>)}
           </dl>
         </section>)}
