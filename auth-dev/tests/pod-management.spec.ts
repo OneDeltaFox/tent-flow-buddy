@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { defaultComplaintOptions } from "../../src/lib/complaints";
 
-for (const width of [390,1280]) test(`menu and complaint settings stay usable at ${width}px`, async ({page})=>{
-  await page.setViewportSize({width,height:844});
+for (const [width,height] of [[390,844],[375,568],[844,390],[768,1024],[1280,844]] as const) test(`menu and complaint settings stay usable at ${width}px`, async ({page})=>{
+  await page.setViewportSize({width,height});
   let options=defaultComplaintOptions();
   await page.route("**/rest/v1/rpc/race_complaints",route=>route.fulfill({json:options}));
   await page.route("**/rest/v1/rpc/save_race_complaints",route=>{
@@ -18,6 +18,9 @@ for (const width of [390,1280]) test(`menu and complaint settings stay usable at
   const bounds=await dialog.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width+1);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y+bounds!.height).toBeLessThanOrEqual(height+1);
+  expect(await dialog.evaluate(el=>getComputedStyle(el).translate)).toBe("none");
   await page.screenshot({path:`test-results/board-menu-${width}.png`,fullPage:true});
   await dialog.getByRole("button",{name:"Manage Chief Complaints"}).click();
   await expect(dialog).toHaveCount(1);

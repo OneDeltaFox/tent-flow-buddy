@@ -179,21 +179,23 @@
 }
 
 .race-menu {
+  inset: 1rem;
+  margin: auto;
+  height: fit-content;
   width: min(24rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
   max-height: calc(100dvh - 2rem);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 @media (max-width: 639px) {
   .race-menu {
-    left: 0;
-    top: auto;
-    bottom: 0;
+    inset: auto 0 0;
+    margin: 0;
     width: 100%;
     max-width: 100%;
+    max-height: calc(100vh - 1rem);
     max-height: calc(100dvh - 1rem);
-    transform: none;
-    translate: none;
-    animation: none;
     padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
   }
 }

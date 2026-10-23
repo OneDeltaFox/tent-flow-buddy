@@ -1658,7 +1658,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
               {connected ? <>
                 <button type="button" className="flex min-h-11 items-center gap-2 rounded border px-3" onClick={() => setMenuOpen(true)}><Menu size={18} />Menu</button>
                 <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
-                  <DialogContent className="race-menu">
+                  <DialogContent edgePositioned className="race-menu">
                     <DialogTitle>Menu</DialogTitle>
                     <DialogDescription className="sr-only">Race actions</DialogDescription>
                     <button type="button" className="flex min-h-11 items-center gap-2 rounded border px-3" onClick={() => { setMenuOpen(false); setStatusView(true); }}><Monitor size={18} />Status Board</button>
