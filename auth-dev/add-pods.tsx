@@ -6,8 +6,10 @@ import type { Pod } from "@/lib/tent-data";
 
 type SectionPlan = { token: string; color: string; beds_per_pod: number; new_names: string[]; changes: { id: string; from: string; to: string; beds: { id: string; from: string; to: string }[] }[] };
 
-export function AddPods({ client, raceId, onSaved, pods = [] }: { client: SupabaseClient; raceId: string; onSaved: () => void; pods?: (Pod & { kind?: string })[] }) {
-  const [open, setOpen] = useState(false);
+export function AddPods({ client, raceId, onSaved, pods = [], open: externalOpen, onOpenChange, hideTrigger = false }: { client: SupabaseClient; raceId: string; onSaved: () => void; pods?: (Pod & { kind?: string })[]; open?: boolean; onOpenChange?: (value: boolean) => void; hideTrigger?: boolean }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [prefix, setPrefix] = useState("");
   const [start, setStart] = useState(1);
   const [count, setCount] = useState(1);
@@ -85,7 +87,7 @@ export function AddPods({ client, raceId, onSaved, pods = [] }: { client: Supaba
     setPlan(null); setOpen(false);
   }
   return <div className="grid gap-3">
-    <button type="button" className={`${button} justify-self-start`} onClick={() => { setOpen(true); setPlan(null); setUncertain(false); setError(""); }} disabled={busy || (uncertain && pods === uncertainPods.current)}><Plus size={18} />Add pods</button>
+    {!hideTrigger && <button type="button" className={`${button} justify-self-start`} onClick={() => { setOpen(true); setPlan(null); setUncertain(false); setError(""); }} disabled={busy || (uncertain && pods === uncertainPods.current)}><Plus size={18} />Add pods</button>}
     {saved && <p role="status">{saved}</p>}
     <Dialog open={open} onOpenChange={value => { if (!value) close(); }}>
     <DialogContent className="board-modal">

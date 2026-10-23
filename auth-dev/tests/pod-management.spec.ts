@@ -1,4 +1,55 @@
 import { expect, test, type Page } from "@playwright/test";
+import { defaultComplaintOptions } from "../../src/lib/complaints";
+
+for (const width of [390,1280]) test(`menu and complaint settings stay usable at ${width}px`, async ({page})=>{
+  await page.setViewportSize({width,height:844});
+  let options=defaultComplaintOptions();
+  await page.route("**/rest/v1/rpc/race_complaints",route=>route.fulfill({json:options}));
+  await page.route("**/rest/v1/rpc/save_race_complaints",route=>{
+    expect(route.request().postDataJSON().p_expected).toEqual(options);
+    options=route.request().postDataJSON().p_options;
+    return route.fulfill({json:null});
+  });
+  await setup(page);
+  await expect(page.getByRole("button",{name:"New Patient",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Menu",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await expect(dialog.getByRole("button",{name:"Manage Chief Complaints"})).toBeEnabled();
+  const bounds=await dialog.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width+1);
+  await page.screenshot({path:`test-results/board-menu-${width}.png`,fullPage:true});
+  await dialog.getByRole("button",{name:"Manage Chief Complaints"}).click();
+  await expect(dialog).toHaveCount(1);
+  await dialog.getByLabel("New complaint",{exact:true}).fill("Test complaint");
+  await dialog.getByRole("button",{name:"Add complaint",exact:true}).click();
+  await dialog.getByRole("button",{name:"Review changes"}).click();
+  await dialog.getByRole("button",{name:"Confirm changes"}).click();
+  await expect(dialog).toHaveCount(0);
+  expect(options.some(x=>x.label==="Test complaint")).toBe(true);
+});
+
+test("pod deletion requires confirmation and blocks occupied pods",async ({page})=>{
+  const snapshot=await setup(page);
+  let deleted=false;
+  await page.route("**/rest/v1/rpc/delete_pod",route=>{
+    expect(route.request().postDataJSON()).toMatchObject({p_pod:"p1",p_confirm:"Pod 1"});
+    snapshot.pods.shift(); deleted=true;
+    return route.fulfill({json:null});
+  });
+  await page.getByRole("button",{name:"Edit Pod 2",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Delete Pod",exact:true})).toBeDisabled();
+  await page.getByRole("dialog").getByRole("button",{name:"Cancel",exact:true}).click();
+  await page.getByRole("button",{name:"Edit Pod 1",exact:true}).click();
+  await page.getByRole("button",{name:"Delete Pod",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Confirm Delete Pod"})).toBeDisabled();
+  expect(deleted).toBe(false);
+  await page.getByLabel("Type Pod 1 to confirm").fill("Pod 1");
+  await page.getByRole("button",{name:"Confirm Delete Pod"}).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Edit Pod 1",exact:true})).toHaveCount(0);
+  expect(deleted).toBe(true);
+});
 
 async function setup(page: Page, role = "owner") {
   await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth", JSON.stringify({ access_token:"token", refresh_token:"refresh", token_type:"bearer", expires_at:Math.floor(Date.now()/1000)+3600, user:{id:"owner"} })));
@@ -21,6 +72,7 @@ test("pool capacity is separate on both boards and stays in census", async ({pag
   snapshot.pods[1]!.kind = "pool";
   snapshot.pods.push({id:"p3",name:"Pool 2",color:"#ffff00",kind:"pool",closed:false,capabilities:[],beds:[{id:"b3",label:"Pool 2-1",status:"open"}]});
   snapshot.pods.push({id:"p4",name:"Pool 3",color:"#ffff00",kind:"pool",closed:true,capabilities:[],beds:[{id:"b4",label:"Pool 3-1",status:"open"}]});
+  await page.getByRole("button",{name:"Menu",exact:true}).click();
   await page.getByRole("button",{name:"Refresh board"}).click();
   const stat = (label: string) => page.getByText(label,{exact:true}).locator("..");
   await expect(stat("Current census")).toContainText("1");
@@ -28,12 +80,12 @@ test("pool capacity is separate on both boards and stays in census", async ({pag
   await expect(stat("Open beds")).toContainText("1 / 1");
   await expect(stat("Occupied pools")).toContainText("1");
   await expect(stat("Open pools")).toContainText("1 / 2");
+  await page.getByRole("button",{name:"Menu",exact:true}).click();
   await page.getByRole("button",{name:"Status Board",exact:true}).click();
   await expect(stat("Census")).toContainText("1");
-  await expect(stat("Bed capacity")).toContainText("1");
-  await expect(stat("Bed saturation")).toContainText("0%");
-  await expect(stat("Occupied pools")).toContainText("1");
-  await expect(stat("Open pools")).toContainText("1 / 2");
+  await expect(page.getByRole("region",{name:"Beds",exact:true}).getByText("Capacity",{exact:true}).locator("..")).toContainText("1");
+  await expect(page.getByRole("region",{name:"Beds",exact:true})).toContainText("0%");
+  await expect(page.getByRole("region",{name:"Pools",exact:true})).toContainText("1 / 2");
 });
 
 test("reserved bed displays In pool, counts once and returns to its exact bed", async ({page})=>{
@@ -42,15 +94,17 @@ test("reserved bed displays In pool, counts once and returns to its exact bed", 
   snapshot.pods[1]!.kind = "pool";
   snapshot.placements[0]!.kind = "pool";
   snapshot.reservations = [{visit_id:"v1",bed_id:"b1"}];
+  await page.getByRole("button",{name:"Menu",exact:true}).click();
   await page.getByRole("button",{name:"Refresh board"}).click();
   const stat = (label:string) => page.getByText(label,{exact:true}).locator("..");
   await expect(stat("Current census")).toContainText("1");
   await expect(stat("Occupied beds")).toContainText("1");
   await expect(stat("Open beds")).toContainText("0 / 1");
   await expect(page.getByText("In pool",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Menu",exact:true}).click();
   await page.getByRole("button",{name:"Status Board",exact:true}).click();
   await expect(stat("Census")).toContainText("1");
-  await expect(stat("Bed saturation")).toContainText("100%");
+  await expect(page.getByRole("region",{name:"Beds",exact:true})).toContainText("100%");
   await expect(page.getByText("In pool",{exact:true})).toBeVisible();
   await page.screenshot({path:"test-results/pool-reservation-status.png",fullPage:true});
   await page.getByRole("button",{name:"Back to working board"}).click();
@@ -126,7 +180,7 @@ test("section preview requires confirmation and refreshes a stale plan", async (
     snapshot.pods.push({id:"p3",name:"Pod 2",color:"#ff8800",kind:"regular",closed:false,capabilities:[],beds:[{id:"b3",label:"2-1",status:"open"}]});
     await route.fulfill({json:1});
   });
-  await page.getByText("Race Settings",{exact:true}).click();
+  await page.getByText("Menu",{exact:true}).click();
   await page.getByRole("button",{name:"Add pods",exact:true}).click();
   const dialog=page.getByRole("dialog");
   await dialog.getByLabel("Color section").selectOption("#ff8800");
@@ -151,5 +205,6 @@ test("editors do not receive pod administration controls",async({page})=>{
   await setup(page,"editor");
   await expect(page.getByRole("button",{name:"New Patient",exact:true})).toBeVisible();
   await expect(page.getByRole("button",{name:"Edit Pod 1",exact:true})).toHaveCount(0);
-  await expect(page.getByText("Race Settings",{exact:true})).toHaveCount(0);
+  await page.getByRole("button",{name:"Menu",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Manage Team",exact:true})).toHaveCount(0);
 });

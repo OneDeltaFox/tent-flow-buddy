@@ -16,7 +16,7 @@ test("owner creates and cancels an invitation with confirmation on mobile", asyn
   let emails=0;
   await page.route("**/functions/v1/send-race-invitation",async r=>{ emails++; expect(r.request().postDataJSON()).toEqual({raceId:"race",invitationId:"invite"}); invites[0].email_attempted_at=new Date().toISOString(); await r.fulfill({json:{sent:true}}); });
   await page.goto("/"); await page.getByRole("button",{name:"Open board"}).click();
-  await page.getByText("Race Settings",{exact:true}).click(); await page.getByRole("button",{name:"Manage Team",exact:true}).click();
+  await page.getByText("Menu",{exact:true}).click(); await page.getByRole("button",{name:"Manage Team",exact:true}).click();
   await page.getByLabel("Invitation email",{exact:true}).fill("new@example.test");
   await page.getByRole("combobox",{name:"Invitation role",exact:true}).selectOption("editor");
   await page.getByRole("button",{name:"Send invitation",exact:true}).click();

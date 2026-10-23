@@ -19,7 +19,7 @@ test("owner confirms additions, role changes and removals; uncertain saves requi
   });
   await page.goto("/");
   await page.getByRole("button",{name:"Open board"}).click();
-  await page.getByText("Race Settings",{exact:true}).click();
+  await page.getByText("Menu",{exact:true}).click();
   await page.getByRole("button",{name:"Manage Team",exact:true}).click();
   const dialog=page.getByRole("dialog");
   await expect(dialog.getByText("owner@example.com",{exact:true})).toBeVisible();

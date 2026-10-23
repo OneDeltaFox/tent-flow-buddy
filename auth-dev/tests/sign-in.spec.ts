@@ -50,7 +50,7 @@ test("restores a session without granting race access and signs out", async ({ p
   await expect(page.getByRole("button", { name: "1-1 ready" })).toBeVisible();
   await expect(page.getByText("Turnover", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByText("Race Settings", { exact: true }).click();
+  await page.getByText("Menu", { exact: true }).click();
   await page.route("**/rest/v1/rpc/create_pods", async route => {
     expect(route.request().postDataJSON()).toMatchObject({ p_race: "test-race", p_pods: [
       { name: "Pool 1", kind: "pool", beds: 1, capabilities: ["Cooling"] },
@@ -67,11 +67,13 @@ test("restores a session without granting race access and signs out", async ({ p
   await page.getByLabel("Capability", { exact: true }).fill("Cooling");
   await page.getByRole("button", { name: "Add capability", exact: true }).click();
   await page.getByRole("button", { name: "Create pods", exact: true }).click();
-  await expect(page.getByText("2 pods added.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.route("**/rest/v1/rpc/patient_board", route => route.fulfill({ json: { pods: [], visits: [], placements: [], turnovers: [] } }));
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "Refresh board" }).click();
   await expect(page.getByText("No pods have been added to this race.", { exact: true })).toBeVisible();
   await page.route("**/rest/v1/rpc/patient_board", route => route.fulfill({ status: 403, json: { message: "Access denied" } }));
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "Refresh board" }).click();
   await expect(page.getByRole("alert")).toContainText("Unable to load patient records");
   await page.getByRole("button", { name: "Account menu" }).click();
@@ -110,7 +112,7 @@ test("shared pod tiles are read-only and never load or overwrite demo data", asy
   await expect(page.getByText(/^Pool 00:/)).toBeVisible();
   await expect(page.getByTestId("status-board").getByRole("heading", { level: 2 })).toHaveText(["Pod 1", "Pod 2", "Pod 10"]);
   await expect(page.getByText("EMS Transport", { exact: true })).toBeVisible();
-  await expect(page.getByText("Race Settings", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Menu", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Edit Pod 1" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "New Patient" })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
