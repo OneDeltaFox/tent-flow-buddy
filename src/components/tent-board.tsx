@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { Monitor, Pencil, Settings, Trash2, X } from "lucide-react";
+import { Menu, Monitor, Pencil, Settings, Trash2, X } from "lucide-react";
+import { defaultComplaints } from "@/lib/complaints";
 import type { ConnectedBoard } from "@/lib/connected-board";
 import { StatusBoard } from "@/components/status-board";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -60,27 +61,8 @@ const dispositionTone: Record<DispositionCategory, string> = {
 const triageOptions: Triage[] = ["untriaged", "immediate", "delayed", "minor"];
 const podColorOptions = ["#ef4444", "#f59e0b", "#22c55e", "#06b6d4", "#8b5cf6", "#ec4899"];
 const otherComplaintValue = "Other";
-const complaintOptions = [
-  "Abd Pain",
-  "Arm Pain/Inj",
-  "Bleeding",
-  "Chest Pain",
-  "Dif. Breathing",
-  "Dizziness",
-  "Foot Pain/Inj",
-  "Gen. Weakness",
-  "Hand Pain/Inj",
-  "Head Pain",
-  "Heat Exhaustion",
-  "Knee Pain/Inj",
-  "Laceration",
-  "Leg Pain/Inj",
-  "Nausea/Vomiting",
-  "Near Syncope",
-  "Syncope",
-  "Unconscious",
-  otherComplaintValue,
-] as const;
+const complaintOptions = [...defaultComplaints, otherComplaintValue];
+const ComplaintOptionsContext = createContext<string[]>(complaintOptions);
 
 const PODS_STORAGE_KEY = "tent-board-pods-v3";
 const INCOMING_STORAGE_KEY = "tent-board-incoming-v1";
@@ -399,6 +381,7 @@ function ComplaintField({
   onChoiceChange: (value: string) => void;
   onOtherChange: (value: string) => void;
 }) {
+  const available = useContext(ComplaintOptionsContext);
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <label>
@@ -410,7 +393,7 @@ function ComplaintField({
           className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-signal"
         >
           <option value="">Not specified</option>
-          {complaintOptions.map((complaint) => (
+          {([...new Set([...available, ...(choice ? [choice] : [])])]).sort((a,b) => a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b)).map((complaint) => (
             <option key={complaint} value={complaint}>
               {complaint}
             </option>
@@ -901,6 +884,7 @@ function nextPodId(pods: Pod[]): string {
 }
 
 export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [selectedPod, setSelectedPod] = useState<string | null>(null);
   const [setup, setSetup] = useState(false);
   const [pods, setPods] = useState<Pod[]>(connected?.pods ?? initialPods);
@@ -1595,6 +1579,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
     );
 
   return (
+    <ComplaintOptionsContext.Provider value={connected?.complaints ? [...connected.complaints, otherComplaintValue] : complaintOptions}>
     <DispositionActionContext.Provider
       value={(ref, bib, category) => {
         setDispositionDescription("");
@@ -1655,13 +1640,13 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
-              <button
+              {!connected && <button
                 type="button"
                 onClick={() => setStatusView(true)}
                 className="flex min-h-11 items-center gap-2 rounded-sm border border-border px-3 text-sm"
               >
                 <Monitor size={16} /> Status Board
-              </button>
+              </button>}
               <button
                 type="button"
                 onClick={() => setAddingPatient(true)}
@@ -1670,7 +1655,17 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
               >
                 New Patient
               </button>
-              {connected ? connected.settings : <details className="relative">
+              {connected ? <>
+                <button type="button" className="flex min-h-11 items-center gap-2 rounded border px-3" onClick={() => setMenuOpen(true)}><Menu size={18} />Menu</button>
+                <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+                  <DialogContent className="race-menu">
+                    <DialogTitle>Menu</DialogTitle>
+                    <DialogDescription className="sr-only">Race actions</DialogDescription>
+                    <button type="button" className="flex min-h-11 items-center gap-2 rounded border px-3" onClick={() => { setMenuOpen(false); setStatusView(true); }}><Monitor size={18} />Status Board</button>
+                    {connected.settings(() => setMenuOpen(false))}
+                  </DialogContent>
+                </Dialog>
+              </> : <details className="relative">
                 <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border px-3 text-sm">
                   <Settings size={16} />
                   Board settings
@@ -2265,5 +2260,6 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
         )}
       </PatientMovement>
     </DispositionActionContext.Provider>
+    </ComplaintOptionsContext.Provider>
   );
 }

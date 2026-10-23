@@ -26,6 +26,7 @@ for (const clearOnly of [false, true]) for (const width of [390, 1280]) test(`Re
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Open board" }).click();
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "End Race", exact: true }).click();
   const dialog = page.getByRole("dialog");
   if (clearOnly) await dialog.getByRole("radio", { name: "Clear patient data only; keep race active" }).check();

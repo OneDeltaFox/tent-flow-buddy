@@ -60,6 +60,57 @@ test('database foundation', async (t) => {
   const transition=(user,v,revision,action,destination=null,category=null,other=null)=>asUser(user,
     'select race_private.transition_visit($1,$2,$3,$4,$5,$6)',[v,revision,action,destination,category,other]);
 
+  await t.test('complaints are owner-managed, race-scoped, copied and do not rewrite patients', async()=>{
+    const read=async(u=owner,r=race)=>(await asUser(u,'select public.race_complaints($1) x',[r])).rows[0].x;
+    const initial=await read();
+    for(const name of ['Abrasions','Back Pain','Inj/Fall']) assert(initial.some(x=>x.label===name));
+    await assert.rejects(read(viewer),/Access denied/);
+    await assert.rejects(read(outsider),/Access denied/);
+    const custom=[{label:'Custom',enabled:true},{label:'Hidden',enabled:false}];
+    const save=(u,expected,list)=>asUser(u,'select public.save_race_complaints($1,$2,$3)',[race,JSON.stringify(expected),JSON.stringify(list)]);
+    await assert.rejects(save(editor,initial,custom),/Access denied/);
+    await assert.rejects(save(owner,initial,[{label:'Other',enabled:true}]),/Invalid/);
+    await assert.rejects(save(owner,initial,[{label:'Duplicate',enabled:true},{label:'duplicate',enabled:false}]),/Duplicate/);
+    await save(owner,initial,custom);
+    assert.deepEqual(await read(editor),custom);
+    assert.equal((await query('select complaint from race_private.visit_details where visit_id=$1',[visit])).rows[0].complaint,'Dizziness');
+    await assert.rejects(save(owner,initial,custom),/changed/);
+    const copied=id(998);
+    await asUser(owner,'select public.create_race($1,$2,$3,$4)',[copied,'Complaint copy','UTC',race]);
+    assert.deepEqual(await read(owner,copied),custom);
+    for(const table of ['beds','pods']) await query(`delete from race_private.${table} where race_id=$1`,[copied]);
+    await query('delete from race_private.races where id=$1',[copied]);
+    await query('delete from race_private.complaint_lists where race_id=$1',[race]);
+  });
+
+  await t.test('pod deletion blocks occupied/reserved beds and preserves history', async()=>{
+    const p=id(994),b=id(995),v=id(996);
+    await query("insert into race_private.pods(id,race_id,name,color) values($1,$2,'Delete fixture','#ffcc00')",[p,race]);
+    await query("insert into race_private.beds(id,race_id,pod_id,label) values($1,$2,$3,'Fixture-1')",[b,race,p]);
+    const expected={name:'Delete fixture',color:'#ffcc00',kind:'regular',closed:false,capabilities:[],beds:1};
+    const remove=(u,confirm='Delete fixture',x=expected)=>asUser(u,'select public.delete_pod($1,$2,$3)',[p,JSON.stringify(x),confirm]);
+    await assert.rejects(remove(editor),/Access denied/);
+    await assert.rejects(remove(viewer),/Access denied/);
+    await assert.rejects(remove(owner,'Wrong'),/confirm/);
+    await assert.rejects(remove(owner,'Delete fixture',{...expected,color:'#000000'}),/changed/);
+    await query('insert into race_private.visits(id,race_id) values($1,$2)',[v,race]);
+    await query("insert into race_private.placements(race_id,visit_id,bed_id,kind,started_at) values($1,$2,$3,'regular',clock_timestamp())",[race,v,b]);
+    await assert.rejects(remove(owner),/assigned patients/);
+    await query('update race_private.placements set ended_at=clock_timestamp() where visit_id=$1',[v]);
+    await query('insert into race_private.bed_reservations(race_id,visit_id,bed_id) values($1,$2,$3)',[race,v,b]);
+    await assert.rejects(remove(owner),/reserved/);
+    await query('delete from race_private.bed_reservations where visit_id=$1',[v]);
+    const before=(await query('select started_at,ended_at from race_private.placements where visit_id=$1',[v])).rows[0];
+    await remove(owner);
+    const after=(await query('select * from race_private.placements where visit_id=$1',[v])).rows[0];
+    assert.equal(after.bed_id,null); assert.equal(after.removed_bed_label,'Fixture-1'); assert.equal(after.removed_pod_name,'Delete fixture');
+    assert.deepEqual({started_at:after.started_at,ended_at:after.ended_at},before);
+    assert.equal((await query('select id from race_private.pods where id=$1',[p])).rows.length,0);
+    assert.equal((await query('select name from race_private.pods where id=$1',[regular])).rows[0].name,'Pod 1');
+    await query('delete from race_private.placements where visit_id=$1',[v]);
+    await query('delete from race_private.visits where id=$1',[v]);
+  });
+
   await t.test('admin account deletion cleans access while preserving activity and protecting owners', async()=>{
     const deleted=id(990), invite=id(991);
     await query("insert into auth.users(id,email) values ($1,'delete@example.test')",[deleted]);

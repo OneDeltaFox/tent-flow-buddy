@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ArrowLeft, RefreshCw, Settings } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import { TentBoard } from "@/components/tent-board";
 import type { BoardCommand } from "@/lib/connected-board";
 import type { Pod, Triage, DispositionCategory } from "@/lib/tent-data";
@@ -11,6 +11,8 @@ import { useAutoRefresh } from "./auto-refresh";
 import { ManageTeam } from "./manage-team";
 import { EndRace } from "./end-race";
 import { RaceEditor } from "./race-editor";
+import { ManageComplaints } from "./manage-complaints";
+import { defaultComplaintOptions, type ComplaintOption } from "@/lib/complaints";
 
 type Visit = { id: string; revision: number; bib: string; triage: Triage; complaint: string; notes: string; source: string; eta: string;
   medical_started_at: string | null; dispositioned_at: string | null; disposition: DispositionCategory; other_disposition: string | null };
@@ -26,8 +28,18 @@ export function PatientBoard({ client, race, onBack }: {
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const [editingPod, setEditingPod] = useState<Pod | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [podsOpen,setPodsOpen]=useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [complaintsOpen, setComplaintsOpen] = useState(false);
+  const [complaints, setComplaints] = useState<ComplaintOption[]>(defaultComplaintOptions);
+  const [complaintsReady, setComplaintsReady] = useState(false);
+  async function loadComplaints() {
+    const {data,error}=await client.rpc("race_complaints",{p_race:race.id});
+    if (!error && Array.isArray(data)) { setComplaints(data); setComplaintsReady(true); }
+    else setComplaintsReady(false);
+  }
+  useEffect(()=>{void loadComplaints();},[client,race.id]);
   const lock = useRef(false);
   const alive = useRef(true);
   const createId = useRef<string | null>(null);
@@ -35,7 +47,7 @@ export function PatientBoard({ client, race, onBack }: {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [syncFailed, setSyncFailed] = useState(false);
   const canRefresh = useAutoRefresh(async () => {
-    if (!lock.current && !needsRefresh && !editingPod) await load(true);
+    if (!lock.current && !needsRefresh && !editingPod) { await load(true); await loadComplaints(); }
   });
   async function load(background = false) {
     if (background && readController.current) return false;
@@ -112,29 +124,40 @@ export function PatientBoard({ client, race, onBack }: {
     return visit ? { ...bed, ...details(visit), visitId: visit.id, reserved: Boolean(reservation), arrivedAt: visit.medical_started_at ? Date.parse(visit.medical_started_at) : undefined,
       since: visit.medical_started_at ? new Date(visit.medical_started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : undefined } : bed;
   }) })) : [];
-  const settings = race.role === "owner" && race.state === "active" ? <details className="relative">
-    <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded border px-3"><Settings size={16} />Race Settings</summary>
-    <div className="absolute right-0 top-full z-20 w-64 rounded border bg-card p-3 shadow-xl"><AddPods client={client} raceId={race.id} pods={snapshot?.pods ?? []} onSaved={() => { void refresh(); }} /><button className="mt-2 min-h-11 w-full rounded border px-3" onClick={() => setTeamOpen(true)}>Manage Team</button><button className="mt-2 min-h-11 w-full rounded border px-3" onClick={() => setRenameOpen(true)}>Rename Race</button></div>
-  </details> : null;
+  const settings = (closeMenu: () => void) => <div className="grid gap-2" onClick={event => { if ((event.target as HTMLElement).closest("button")) closeMenu(); }}>
+    {race.role === "owner" && race.state === "active" && <>
+      <button className="min-h-11 rounded border px-3" onClick={()=>setPodsOpen(true)}>Add pods</button>
+      <button className="min-h-11 rounded border px-3" onClick={() => setTeamOpen(true)}>Manage Team</button>
+      <button className="min-h-11 rounded border px-3" onClick={() => setRenameOpen(true)}>Rename Race</button>
+      <button className="min-h-11 rounded border px-3" disabled={!complaintsReady} onClick={() => setComplaintsOpen(true)}>Manage Chief Complaints</button>
+    </>}
+    <button disabled={busy} onClick={() => { void refresh(); void loadComplaints(); }} className="flex min-h-11 items-center gap-2 rounded border px-3"><RefreshCw size={18}/>Refresh board</button>
+    <button disabled={busy} onClick={onBack} className="flex min-h-11 items-center gap-2 rounded border px-3"><ArrowLeft size={18}/>Back to races</button>
+    {race.role === "owner" && <div className="mt-2 border-t pt-3"><button disabled={busy} className="min-h-11 w-full rounded border border-destructive px-3 text-destructive" onClick={() => setEndOpen(true)}>End Race</button></div>}
+  </div>;
   return <section className="grid gap-3">
     <div className="flex gap-3">
-      <button aria-label="Back to races" title="Back to races" disabled={busy} onClick={onBack} className="min-h-11 border p-3"><ArrowLeft size={18} /></button>
-      <button aria-label="Refresh board" title="Refresh board" disabled={busy} onClick={() => { void refresh(); }} className="min-h-11 border p-3"><RefreshCw size={18} /></button>
-      {race.role === "owner" && <button disabled={busy} className="min-h-11 rounded border border-destructive px-3 text-destructive" onClick={() => setEndOpen(true)}>End Race</button>}
       {busy && <p role="status">Saving or refreshing...</p>}
       <p role="status" className="self-center text-sm text-muted-foreground">{syncFailed ? "Updates interrupted - displayed data may be out of date. Retrying..." : lastUpdated ? `Auto-update on · Updated ${lastUpdated}` : "Connecting..."}</p>
     </div>
     {error && <p role="alert">{error}</p>}
+    {(needsRefresh || syncFailed || !snapshot || race.state !== "active") && <div className="flex flex-wrap gap-2">
+      <button className="min-h-11 rounded border px-3" disabled={busy} onClick={()=>void refresh()}>Refresh board</button>
+      <button className="min-h-11 rounded border px-3" disabled={busy} onClick={onBack}>Back to races</button>
+      {race.role === "owner" && race.state !== "active" && <button className="min-h-11 rounded border px-3" onClick={()=>setEndOpen(true)}>End Race</button>}
+    </div>}
     {snapshot?.pods.length === 0 && <p role="status">No pods have been added to this race.</p>}
     {!snapshot ? <p role="status">{error ? "Patient board unavailable." : "Loading patient board..."}</p> :
       <div inert={busy || needsRefresh || syncFailed || race.state !== "active"}>
         <TentBoard connected={{ pods, incoming: snapshot.visits.filter(v => !v.dispositioned_at && !livePlacements.some(p => p.visit_id === v.id)).map(v => ({ id: v.id, ...details(v), source: v.source, eta: v.eta })),
           dispositions: snapshot.visits.filter(v => v.dispositioned_at).map(v => ({ id: v.id, ...details(v), category: v.disposition, time: new Date(v.dispositioned_at!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }), from: "Medical", description: v.other_disposition ?? undefined })),
-          eventName: race.name, run, settings, readOnly: race.state !== "active",
+          eventName: race.name, run, settings, complaints: complaints.filter(x=>x.enabled).map(x=>x.label), readOnly: race.state !== "active",
           ...(race.role === "owner" && race.state === "active" ? { onEditPod: (id: string) => setEditingPod(snapshot.pods.find(pod => pod.id === id) ?? null) } : {}) }} />
       </div>}
     {editingPod && <EditPod key={editingPod.id} client={client} pod={editingPod} onClose={() => setEditingPod(null)} onSaved={() => { void refresh(); }} />}
+    {podsOpen && race.role === "owner" && <AddPods client={client} raceId={race.id} pods={snapshot?.pods ?? []} open hideTrigger onOpenChange={setPodsOpen} onSaved={()=>void refresh()}/>}
     {teamOpen && race.role === "owner" && <ManageTeam client={client} raceId={race.id} onClose={() => setTeamOpen(false)} />}
+    {complaintsOpen && race.role === "owner" && <ManageComplaints client={client} raceId={race.id} initial={complaints} onClose={() => setComplaintsOpen(false)} onSaved={() => void loadComplaints()} />}
     {renameOpen && race.role === "owner" && <RaceEditor client={client} race={race} onClose={() => setRenameOpen(false)} onSaved={onBack} />}
     {endOpen && race.role === "owner" && <EndRace client={client} raceId={race.id} raceName={race.name} onClose={() => { setEndOpen(false); void refresh(); }} onChanged={onBack} />}
   </section>;

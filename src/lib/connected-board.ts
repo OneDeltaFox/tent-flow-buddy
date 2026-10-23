@@ -11,7 +11,8 @@ export type BoardCommand =
 export type ConnectedBoard = {
   pods: Pod[]; incoming: Incoming[]; dispositions: Disposition[]; eventName: string;
   run: (command: BoardCommand) => Promise<boolean>;
-  settings: ReactNode;
+  settings: (closeMenu: () => void) => ReactNode;
+  complaints?: string[];
   readOnly: boolean;
   onEditPod?: (podId: string) => void;
 };
