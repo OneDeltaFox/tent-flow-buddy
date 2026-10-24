@@ -930,6 +930,9 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
   const [editPatientMessage, setEditPatientMessage] = useState("");
   const [editingPod, setEditingPod] = useState<string | null>(null);
   const [incomingExpanded, setIncomingExpanded] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 639px)").matches) setIncomingExpanded(true);
+  }, []);
   const [layoutMessage, setLayoutMessage] = useState("");
 
   useEffect(() => {
@@ -1733,7 +1736,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
           </header>
 
           <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[300px_minmax(0,1fr)_300px]">
-            <aside className="order-2 flex min-w-0 flex-col gap-2 border-t border-border py-2 xl:order-1">
+            <aside className="order-1 flex min-w-0 flex-col gap-2 border-t border-border py-2 sm:order-2 xl:order-1">
               <button
                 type="button"
                 onClick={() => setIncomingExpanded((open) => !open)}
@@ -1874,7 +1877,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
               </div>
             </aside>
 
-            <section className="order-1 flex min-w-0 flex-col gap-3 xl:order-2">
+            <section className="order-2 flex min-w-0 flex-col gap-3 sm:order-1 xl:order-2">
               {setup && (
                 <div>
                   <button
