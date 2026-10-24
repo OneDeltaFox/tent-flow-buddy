@@ -1,6 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 import { defaultComplaintOptions } from "../../src/lib/complaints";
 
+for (const width of [320,390,1280]) test(`long race title wraps at ${width}px`,async ({page})=>{
+  await page.setViewportSize({width,height:844});
+  const name="Wine and Dine Half Marathon";
+  await setup(page,"owner",name);
+  const title=page.getByRole("heading",{name,exact:true});
+  await expect(title).toBeVisible();
+  expect(await title.evaluate(el=>el.scrollWidth<=el.clientWidth && el.scrollHeight<=el.clientHeight)).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:`test-results/race-title-${width}.png`,fullPage:true});
+});
+
 for (const [width,height] of [[390,844],[375,568],[844,390],[768,1024],[1280,844]] as const) test(`menu and complaint settings stay usable at ${width}px`, async ({page})=>{
   await page.setViewportSize({width,height});
   let options=defaultComplaintOptions();
@@ -54,7 +65,7 @@ test("pod deletion requires confirmation and blocks occupied pods",async ({page}
   expect(deleted).toBe(true);
 });
 
-async function setup(page: Page, role = "owner") {
+async function setup(page: Page, role = "owner", name = "Test Race") {
   await page.addInitScript(() => localStorage.setItem("tent-flow-dev-auth", JSON.stringify({ access_token:"token", refresh_token:"refresh", token_type:"bearer", expires_at:Math.floor(Date.now()/1000)+3600, user:{id:"owner"} })));
   const snapshot = {
     pods: [
@@ -64,7 +75,7 @@ async function setup(page: Page, role = "owner") {
     visits:[{id:"v1",revision:1,bib:"TEST-1",triage:"untriaged",complaint:"Dizziness",notes:"",source:"",eta:"",medical_started_at:"2026-10-14T10:00:00Z",dispositioned_at:null}],
     placements:[{visit_id:"v1",bed_id:"b2",started_at:"2026-10-14T10:00:00Z",ended_at:null,kind:"regular"}], turnovers:[], reservations: [] as {visit_id:string;bed_id:string}[],
   };
-  await page.route("**/rest/v1/rpc/my_races", route=>route.fulfill({json:[{id:"race",name:"Test Race",state:"active",role}]}));
+  await page.route("**/rest/v1/rpc/my_races", route=>route.fulfill({json:[{id:"race",name,state:"active",role}]}));
   await page.route("**/rest/v1/rpc/patient_board",route=>route.fulfill({json:snapshot}));
   await page.goto("/"); await page.getByRole("button",{name:"Open board",exact:true}).click();
   return snapshot;
