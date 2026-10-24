@@ -184,7 +184,7 @@ test("batch pods preserve the board and support separate pool numbering", async 
 test("status board is read only and arrival timers survive moves and reload", async ({
   page,
 }, testInfo) => {
-  await page.getByRole("button", { name: "Incoming (1)", exact: false }).click();
+  if (!(await page.getByRole("button", { name: "Edit patient 9900", exact: true }).isVisible())) await page.getByRole("button", { name: "Incoming (1)", exact: false }).click();
   await page.getByRole("button", { name: "Edit patient 9900", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit Patient", exact: true });
   await editor.getByLabel("Move to pod").selectOption("B");
@@ -264,7 +264,7 @@ test("closed and occupied beds reject drops", async ({ page, isMobile }) => {
 });
 
 test("incoming can be edited and assigned without drag", async ({ page }) => {
-  await page.getByRole("button", { name: /Incoming \(1\)/ }).click();
+  if (!(await page.getByRole("button", { name: "Edit patient 9900", exact: true }).isVisible())) await page.getByRole("button", { name: /Incoming \(1\)/ }).click();
   await page.getByRole("button", { name: "Edit patient 9900", exact: true }).click();
   const modal = page.getByRole("dialog");
   await modal.getByLabel("Move to pod").selectOption("B");
@@ -303,7 +303,9 @@ test("screen and dialogs fit without horizontal overflow", async ({ page }, test
 });
 
 test("incoming long press assigns to an open bed", async ({ page, isMobile }) => {
-  await page.getByRole("button", { name: /Incoming \(1\)/ }).click();
+  if (!(await page.getByRole("button", { name: "Edit patient 9900", exact: true }).isVisible())) {
+    await page.getByRole("button", { name: /Incoming \(1\)/ }).click();
+  }
   await drag(
     page,
     page.getByRole("button", { name: "Edit patient 9900", exact: true }),
@@ -315,6 +317,16 @@ test("incoming long press assigns to an open bed", async ({ page, isMobile }) =>
     await page.evaluate(() => JSON.parse(localStorage.getItem("tent-board-incoming-v1")!)),
   ).toEqual([]);
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("phone Incoming is expanded above pods", async ({page},testInfo)=>{
+  test.skip(testInfo.project.name !== "phone");
+  const patient=page.getByRole("button",{name:"Edit patient 9900",exact:true});
+  await expect(patient).toBeVisible();
+  const incoming=await patient.boundingBox();
+  const pod=await page.locator('.pod-grid').boundingBox();
+  expect(incoming!.y+incoming!.height).toBeLessThanOrEqual(pod!.y);
+  await page.screenshot({path:testInfo.outputPath("incoming-above-pods.png"),fullPage:true});
 });
 
 test("patient disposition menu confirms, saves Other description, and preserves turnover", async ({
