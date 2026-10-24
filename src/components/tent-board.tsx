@@ -1618,16 +1618,15 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
         <div className="tent-board flex min-h-screen flex-col gap-3 bg-background p-2 font-sans text-foreground sm:p-3 lg:p-4">
           <header className="grid grid-cols-1 items-center gap-2 border-b border-border bg-card px-3 py-2 xl:grid-cols-[minmax(0,1fr)_auto]">
             <div className="flex min-w-0 flex-wrap items-center gap-x-8 gap-y-2">
-              <div className="min-w-0">
+              <div className="min-w-0 max-w-full">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                   TriageDesk - Charge Board
                 </div>
-                <input
+                {connected ? <h1 className="whitespace-normal text-lg font-semibold leading-snug [overflow-wrap:anywhere]">{eventName}</h1> : <input
                   value={eventName}
-                  readOnly={Boolean(connected)}
                   onChange={(e) => setEventName(e.target.value)}
                   className="w-full min-w-0 rounded-sm border border-transparent bg-transparent px-0 py-0 text-lg font-semibold tracking-tight outline-none hover:border-border focus:border-signal"
-                />
+                />}
               </div>
               <div className="grid w-full grid-cols-3 gap-x-3 gap-y-2 font-mono sm:flex sm:w-auto sm:flex-wrap sm:gap-5">
                 {summary.map((item) => (
