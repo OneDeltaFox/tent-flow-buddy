@@ -1,10 +1,19 @@
 import { expect, test } from "@playwright/test";
-import { defaultComplaintOptions } from "../../src/lib/complaints";
+import { defaultComplaintOptions, mostUsedComplaints } from "../../src/lib/complaints";
+
+test("race quick picks count current visits once and exclude free text", () => {
+  const visits=[{id:"1",complaint:"Dizziness"},{id:"1",complaint:"Dizziness"},{id:"2",complaint:"Back Pain"},{id:"3",complaint:"private free text"}];
+  expect(mostUsedComplaints(visits,["Dizziness","Back Pain"])).toEqual(["Back Pain","Dizziness"]);
+  visits[0]!.complaint="Back Pain";
+  expect(mostUsedComplaints(visits,["Dizziness","Back Pain"])).toEqual(["Back Pain"]);
+  expect(mostUsedComplaints([], ["Dizziness"])).toEqual([]);
+  expect(mostUsedComplaints(visits, ["Dizziness"])).toEqual([]);
+});
 
 test("searchable complaints support intake, editing, custom entries and clearing on mobile", async ({page}) => {
   await page.setViewportSize({width:390,height:844});
   await page.addInitScript(()=>localStorage.setItem("tent-flow-dev-auth",JSON.stringify({access_token:"token",refresh_token:"refresh",token_type:"bearer",expires_at:Math.floor(Date.now()/1000)+3600,user:{id:"user"}})));
-  const snapshot:any={pods:[],visits:[],placements:[],turnovers:[]};
+  const snapshot:any={pods:[],visits:["Heat Exhaustion","Dizziness","Nausea/Vomiting","Heat Exhaustion","Back Pain","Gen. Weakness"].map((complaint,i)=>({id:`past-${i}`,bib:`OLD-${i}`,complaint,triage:"untriaged",revision:1,dispositioned_at:"2026-11-19T12:00:00Z",disposition:"discharged"})),placements:[],turnovers:[]};
   await page.route("**/rest/v1/rpc/my_races",route=>route.fulfill({json:[{id:"race",name:"Test Race",role:"owner",state:"active"}]}));
   await page.route("**/rest/v1/rpc/available_races",route=>route.fulfill({json:[]}));
   await page.route("**/rest/v1/rpc/my_race_invitations",route=>route.fulfill({json:[]}));
@@ -22,6 +31,14 @@ test("searchable complaints support intake, editing, custom entries and clearing
   const dialog=page.getByRole("dialog");
   const picker=dialog.getByRole("combobox",{name:"Chief complaint",exact:true});
   await dialog.getByLabel("Race #",{exact:true}).fill("SEARCH-1");
+  const picks=dialog.getByRole("group",{name:"Most used this race"});
+  await expect(picks.getByRole("button")).toHaveCount(5);
+  await expect(picks.getByRole("button").first()).toHaveText("Heat Exhaustion");
+  await picks.getByRole("button",{name:"Heat Exhaustion",exact:true}).click();
+  await expect(picker).toHaveValue("Heat Exhaustion");
+  await expect(picks.getByRole("button",{name:"Heat Exhaustion",exact:true})).toHaveAttribute("aria-pressed","true");
+  await page.screenshot({path:"test-results/frequent-complaints-phone.png",fullPage:true});
+  await page.screenshot({path:"test-results/patient-dialog-polish-phone.png",fullPage:true});
   await picker.fill("PAIN chest");
   await expect(dialog.getByRole("option",{name:"Chest Pain",exact:true})).toBeVisible();
   await expect(dialog.getByRole("option",{name:"Back Pain",exact:true})).toHaveCount(0);
@@ -33,7 +50,23 @@ test("searchable complaints support intake, editing, custom entries and clearing
   await expect(picker).toHaveAttribute("aria-expanded","true");
   await picker.fill("unselected query"); await picker.press("Escape");
   await expect(picker).toHaveValue("Chest Pain");
-  await dialog.getByRole("button",{name:"Add",exact:true}).click();
+  await expect(dialog.getByLabel("Notes",{exact:true})).toBeHidden();
+  await dialog.getByText("Additional details",{exact:false}).click();
+  await dialog.getByLabel("Notes",{exact:true}).fill("Do not carry forward");
+  await dialog.getByLabel("Source",{exact:true}).fill("Course");
+  await dialog.getByLabel("ETA",{exact:true}).fill("5 minutes");
+  await dialog.getByLabel("Triage",{exact:true}).selectOption("delayed");
+  await dialog.getByRole("button",{name:"Add & Next",exact:true}).click();
+  await expect(dialog.getByLabel("Race #",{exact:true})).toHaveValue("");
+  await expect(dialog.getByLabel("Race #",{exact:true})).toBeFocused();
+  await expect(picker).toHaveValue("");
+  await expect(dialog.getByLabel("Triage",{exact:true})).toHaveValue("untriaged");
+  await expect(dialog.getByLabel("Notes",{exact:true})).toBeHidden();
+  await expect(dialog.getByLabel("Notes",{exact:true})).toHaveValue("");
+  await expect(dialog.getByLabel("Source",{exact:true})).toHaveValue("");
+  await expect(dialog.getByLabel("ETA",{exact:true})).toHaveValue("");
+  await page.screenshot({path:"test-results/fast-intake-phone.png",fullPage:true});
+  await dialog.getByRole("button",{name:"Cancel",exact:true}).click();
   await expect(dialog).toHaveCount(0);
   expect(saves[0].p_details.complaint).toBe("Chest Pain");
 

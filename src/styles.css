@@ -253,3 +253,53 @@
 .board-modal * {
   letter-spacing: 0;
 }
+
+/* Patient dialogs keep actions visible while only the fields scroll. */
+.patient-dialog {
+  inset: 1rem;
+  margin: auto;
+  height: fit-content;
+  max-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 0;
+  padding: 0;
+}
+.patient-dialog-heading { padding: 1.25rem 3.5rem 0.5rem 1.25rem; }
+.dialog-eyebrow, .menu-section-title {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+.dialog-eyebrow { margin-bottom: 0.5rem; color: var(--signal); }
+.patient-dialog-description { padding: 0 1.25rem 1rem; border-bottom: 1px solid var(--border); }
+.patient-form { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.patient-form-scroll { overflow-y: auto; overscroll-behavior: contain; padding: 1rem; display: grid; gap: 1rem; }
+.patient-form-section { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem; display: grid; gap: 0.875rem; background: var(--card); }
+.patient-form-section legend { padding: 0 0.4rem; font-size: 0.8rem; font-weight: 650; color: var(--signal); }
+.patient-form-actions { flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; padding: 1rem; border-top: 1px solid var(--border); background: var(--background); }
+.patient-primary-action { order: 2; background: var(--signal); color: var(--background); border: 1px solid var(--signal); border-radius: 8px; font-size: 1rem; font-weight: 700; padding: 0.65rem 1rem; }
+.patient-secondary-action { order: 1; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; font-weight: 600; padding: 0.65rem 1rem; }
+.patient-dialog button:focus-visible, .race-menu button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.race-menu { border-radius: 14px; gap: 0.75rem; }
+.race-menu .menu-section-title { margin-top: 0.65rem; }
+.race-menu button:not([data-radix-dialog-close]) { text-align: left; border-radius: 8px; font-weight: 600; }
+.race-menu button:not(.absolute) { padding: 0.7rem 0.85rem; background: var(--card); }
+.race-menu button:hover { border-color: var(--signal); }
+.menu-danger-section { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+@media (max-width: 639px) {
+  .patient-dialog { inset: 0.5rem; width: calc(100% - 1rem); max-height: calc(100dvh - 1rem); }
+  .patient-form-actions { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+}
+.patient-extra-details { border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem; }
+.patient-extra-details summary { cursor: pointer; min-height: 44px; font-size: 0.875rem; font-weight: 600; }
+.patient-extra-details summary span { display: block; padding-top: 0.25rem; font-size: 0.75rem; font-weight: 400; color: var(--muted-foreground); }
+.intake-actions { grid-template-columns: 1fr 0.8fr 1.4fr; gap: 0.5rem; }
+.intake-actions button { padding: 0.65rem 0.4rem; font-size: 0.875rem; }
+.intake-actions .intake-add { order: 2; }
+.intake-actions .patient-primary-action { order: 3; }
+.patient-form-actions button:disabled { opacity: 0.5; cursor: wait; }

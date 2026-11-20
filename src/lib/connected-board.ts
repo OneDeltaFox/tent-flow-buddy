@@ -13,6 +13,7 @@ export type ConnectedBoard = {
   run: (command: BoardCommand) => Promise<boolean>;
   settings: (closeMenu: () => void) => ReactNode;
   complaints?: string[];
+  frequentComplaints?: string[];
   readOnly: boolean;
   onEditPod?: (podId: string) => void;
   duplicateVisitId?: string | undefined;

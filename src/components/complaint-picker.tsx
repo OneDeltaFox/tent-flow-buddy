@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 
-export function ComplaintPicker({value,options,onChange}:{value:string;options:string[];onChange:(value:string)=>void}) {
+export function ComplaintPicker({value,options,frequent = [],onChange}:{value:string;options:string[];frequent?:string[];onChange:(value:string)=>void}) {
   const id=useId();
+  const [quickPicks] = useState(() => frequent.slice(0,5));
   const [open,setOpen]=useState(false);
   const [query,setQuery]=useState("");
   const [active,setActive]=useState(-1);
@@ -17,6 +18,10 @@ export function ComplaintPicker({value,options,onChange}:{value:string;options:s
     if(!event.currentTarget.contains(event.relatedTarget as Node|null)){setOpen(false);setQuery("");setActive(-1);}
   }}>
     <label htmlFor={id}>Chief complaint</label>
+    {quickPicks.length > 0 && <div role="group" aria-label="Most used this race" className="grid gap-2">
+      <p className="text-xs text-muted-foreground">Most used this race · tap to select</p>
+      <div className="flex flex-wrap gap-2">{quickPicks.map(complaint => <button key={complaint} type="button" aria-pressed={value === complaint} onClick={() => choose(complaint)} className={`min-h-11 rounded-lg border px-3 py-2 text-left text-sm font-semibold ${value === complaint ? "border-signal bg-signal text-background" : "border-signal/40 bg-signal/10 text-foreground hover:border-signal"}`}>{complaint}</button>)}</div>
+    </div>}
     <div className="flex min-w-0 gap-1">
       <input id={id} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-list`}
         aria-activedescendant={open && active>=0 ? `${id}-option-${active}` : undefined}

@@ -99,6 +99,8 @@ test("connected intake, assignment, edit, disposition and turnover use RPCs with
   await modal.getByRole("button",{name:"Save",exact:true}).click();
   await expect(modal).toHaveCount(0);
   expect(saves[2]).toMatchObject({p_revision:2,p_bed:null,p_details:{notes:"Test note"}});
+  // Wait for the closing modal overlay to stop intercepting pointer events.
+  await page.getByRole("button",{name:"Edit patient TEST-1",exact:true}).click({trial:true});
   const source=await page.getByRole("button",{name:"Edit patient TEST-1",exact:true}).boundingBox();
   const target=await page.getByText("1-2",{exact:true}).boundingBox();
   await page.mouse.move(source!.x+source!.width/2,source!.y+source!.height/2);

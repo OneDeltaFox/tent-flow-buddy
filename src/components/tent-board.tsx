@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, Monitor, Pencil, Settings, Trash2, X } from "lucide-react";
 import { ComplaintPicker } from "@/components/complaint-picker";
 import { defaultComplaints } from "@/lib/complaints";
@@ -63,6 +63,7 @@ const triageOptions: Triage[] = ["untriaged", "immediate", "delayed", "minor"];
 const podColorOptions = ["#ef4444", "#f59e0b", "#22c55e", "#06b6d4", "#8b5cf6", "#ec4899"];
 const otherComplaintValue = "Other";
 const complaintOptions = [...defaultComplaints, otherComplaintValue];
+const FrequentComplaintsContext = createContext<string[]>([]);
 const ComplaintOptionsContext = createContext<string[]>(complaintOptions);
 
 const PODS_STORAGE_KEY = "tent-board-pods-v3";
@@ -388,9 +389,10 @@ function ComplaintField({
   onOtherChange: (value: string) => void;
 }) {
   const available = useContext(ComplaintOptionsContext);
+  const frequent = useContext(FrequentComplaintsContext);
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <ComplaintPicker value={choice} options={available} onChange={onChoiceChange} />
+      <ComplaintPicker frequent={frequent} value={choice} options={available} onChange={onChoiceChange} />
       {choice === otherComplaintValue && (
         <label>
           Other complaint
@@ -920,6 +922,11 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
   const [newPodCount, setNewPodCount] = useState("1");
   const [newBedCount, setNewBedCount] = useState(String(BEDS_PER_POD));
   const [addingPatient, setAddingPatient] = useState(false);
+  const [intakeSequence, setIntakeSequence] = useState(0);
+  const [intakeSaving, setIntakeSaving] = useState(false);
+  const intakeLock = useRef(false);
+  const intakeBibInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (addingPatient) intakeBibInput.current?.focus(); }, [intakeSequence, addingPatient]);
   const [newPatientBib, setNewPatientBib] = useState("");
   const [newPatientTriage, setNewPatientTriage] = useState<Triage>("untriaged");
   const [newPatientComplaintChoice, setNewPatientComplaintChoice] = useState("");
@@ -1113,6 +1120,15 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
 
   const addIncomingPatient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (intakeLock.current) return;
+    const keepOpen = (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "next";
+    const finish = () => {
+      resetPatientForm();
+      if (keepOpen) { setIntakeSequence(n => n + 1); setNewPatientMessage("Patient added. Ready for the next patient."); }
+      else setAddingPatient(false);
+    };
+    intakeLock.current = true; setIntakeSaving(true);
+    try {
 
     const bib = newPatientBib.trim();
     const complaint = complaintFromSelection(newPatientComplaintChoice, newPatientOtherComplaint);
@@ -1139,7 +1155,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
       const target = pods.find(pod => pod.id === newPatientAssignPod && !pod.closed)?.beds.find(bed => bed.status === "open");
       if (newPatientAssignPod && !target) { setNewPatientMessage("Selected pod has no available bed. Refresh and choose again."); return; }
       if (await connected.run({ action: "save", details: patient, ...(target ? { bed: target.id } : {}) })) {
-        resetPatientForm(); setAddingPatient(false);
+        finish();
       } else setNewPatientMessage("Save not confirmed. Close this window, refresh the board, and check before retrying.");
       return;
     }
@@ -1170,8 +1186,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
           })),
         );
 
-        resetPatientForm();
-        setAddingPatient(false);
+        finish();
         return;
       }
 
@@ -1181,8 +1196,8 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
     }
 
     setIncomingQueue((prev) => [patient, ...prev]);
-    resetPatientForm();
-    setAddingPatient(false);
+    finish();
+    } finally { intakeLock.current = false; setIntakeSaving(false); }
   };
 
   const removePod = (id: string) => {
@@ -1268,6 +1283,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
   };
 
   const cancelNewPatient = () => {
+    if (intakeLock.current) return;
     const dirty =
       newPatientBib ||
       newPatientComplaintChoice ||
@@ -1621,6 +1637,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
     );
 
   return (
+    <FrequentComplaintsContext.Provider value={connected?.frequentComplaints ?? []}>
     <ComplaintOptionsContext.Provider value={connected?.complaints ? [...connected.complaints, otherComplaintValue] : complaintOptions}>
     <DispositionActionContext.Provider
       value={(ref, bib, category) => {
@@ -1700,8 +1717,8 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                 <button type="button" className="flex min-h-11 items-center gap-2 rounded border px-3" onClick={() => setMenuOpen(true)}><Menu size={18} />Menu</button>
                 <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
                   <DialogContent edgePositioned className="race-menu">
-                    <DialogTitle>Menu</DialogTitle>
-                    <DialogDescription className="sr-only">Race actions</DialogDescription>
+                    <DialogTitle>Race menu</DialogTitle>
+                    <DialogDescription>Display, setup, and team controls</DialogDescription><h3 className="menu-section-title">Board &amp; display</h3>
                     <button type="button" className="flex min-h-11 items-center gap-2 rounded border px-3" onClick={() => { setMenuOpen(false); setStatusView(true); }}><Monitor size={18} />Status Board</button>
                     {connected.settings(() => setMenuOpen(false))}
                   </DialogContent>
@@ -1795,16 +1812,17 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                   if (!open) cancelNewPatient();
                 }}
               >
-                <DialogContent className="board-modal">
-                  <DialogTitle>New Patient</DialogTitle>
-                  <DialogDescription className="sr-only">
+                <DialogContent edgePositioned className="board-modal patient-dialog">
+                  <div className="patient-dialog-heading"><span className="dialog-eyebrow">Patient coordination</span><DialogTitle>New Patient</DialogTitle></div>
+                  <DialogDescription className="patient-dialog-description">
                     Patient arrival and assignment
                   </DialogDescription>
-                  {newPatientMessage && <p role="alert">{newPatientMessage}</p>}
-                  <form onSubmit={addIncomingPatient} className="editor-form flex flex-col gap-3">
-                    <label>
+                  {newPatientMessage && <p role="status" className="px-5 py-2 text-sm">{newPatientMessage}</p>}
+                  <form key={intakeSequence} onSubmit={addIncomingPatient} className="editor-form patient-form">
+                    <fieldset disabled={intakeSaving} className="patient-form-scroll"><fieldset className="patient-form-section"><legend>Patient details</legend><label>
                       Race #
                       <input
+                        ref={intakeBibInput}
                         value={newPatientBib}
                         onChange={(e) => setNewPatientBib(e.target.value)}
                         placeholder="Race #"
@@ -1818,7 +1836,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                       onChoiceChange={setNewPatientComplaintChoice}
                       onOtherChange={setNewPatientOtherComplaint}
                     />
-                    <label>
+                    </fieldset><fieldset className="patient-form-section"><legend>Placement</legend>{connected && !newPatientAssignPod && plannedPodField(newPatientPlannedPod, setNewPatientPlannedPod)}<label>
                       Assign Pod
                       <select
                         value={newPatientAssignPod}
@@ -1838,8 +1856,8 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                         })}
                       </select>
                     </label>
-                    {connected && !newPatientAssignPod && plannedPodField(newPatientPlannedPod, setNewPatientPlannedPod)}
-                    <label>
+
+                    </fieldset><fieldset className="patient-form-section"><legend>Triage</legend><label>
                       Triage
                       <select
                         value={newPatientTriage}
@@ -1854,7 +1872,7 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                         ))}
                       </select>
                     </label>
-                    <label>
+                    </fieldset><details className="patient-extra-details"><summary>Additional details <span>Notes, source &amp; ETA</span></summary><div className="grid gap-3 pt-3"><label>
                       Notes
                       <input
                         value={newPatientStatus}
@@ -1881,20 +1899,23 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                         className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
                       />
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
+                    </div></details></fieldset><div className="patient-form-actions intake-actions">
                       <button
                         type="submit"
-                        className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                        disabled={intakeSaving}
+                        className="patient-secondary-action intake-add"
                       >
                         Add
                       </button>
                       <button
                         type="button"
+                        disabled={intakeSaving}
                         onClick={cancelNewPatient}
-                        className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+                        className="patient-secondary-action"
                       >
                         Cancel
                       </button>
+                      <button type="submit" value="next" disabled={intakeSaving} className="patient-primary-action">{intakeSaving ? "Saving…" : "Add & Next"}</button>
                     </div>
                   </form>
                 </DialogContent>
@@ -2109,14 +2130,14 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                   if (!open) cancelPatientEdit();
                 }}
               >
-                <DialogContent className="board-modal">
-                  <DialogTitle>Edit Patient</DialogTitle>
-                  <DialogDescription className="sr-only">
+                <DialogContent edgePositioned className="board-modal patient-dialog">
+                  <div className="patient-dialog-heading"><span className="dialog-eyebrow">Patient coordination</span><DialogTitle>Edit Patient</DialogTitle></div>
+                  <DialogDescription className="patient-dialog-description">
                     Patient information and pod assignment
                   </DialogDescription>
                   {editPatient && (
-                    <form onSubmit={savePatientEdit} className="editor-form grid gap-3">
-                      <label>
+                    <form onSubmit={savePatientEdit} className="editor-form patient-form">
+                      <div className="patient-form-scroll"><fieldset className="patient-form-section"><legend>Patient details</legend><label>
                         Race #
                         <input
                           value={editPatientBib}
@@ -2126,38 +2147,16 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                           required
                         />
                       </label>
-                      <label>
-                        Triage
-                        <select
-                          value={editPatientTriage}
-                          onChange={(e) => setEditPatientTriage(e.target.value as Triage)}
-                          aria-label="Triage"
-                          className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
-                        >
-                          {triageOptions.map((triage) => (
-                            <option key={triage} value={triage}>
-                              {triageLabel[triage]}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+
                       <ComplaintField
                         choice={editPatientComplaintChoice}
                         other={editPatientOtherComplaint}
                         onChoiceChange={setEditPatientComplaintChoice}
                         onOtherChange={setEditPatientOtherComplaint}
                       />
-                      <label>
-                        Notes
-                        <input
-                          value={editPatientStatus}
-                          onChange={(e) => setEditPatientStatus(e.target.value)}
-                          placeholder="Notes"
-                          className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
-                        />
-                      </label>
-                      <label>
-                        Assign Pod
+
+                      </fieldset><fieldset className="patient-form-section"><legend>Placement</legend>{connected && editPatient.kind === "incoming" && !editPatientPod && plannedPodField(editPatientPlannedPod, setEditPatientPlannedPod)}<label>
+                      Assign Pod
                         <select
                           value={editPatientPod}
                           onChange={(e) => setEditPatientPod(e.target.value)}
@@ -2186,18 +2185,40 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
                           })}
                         </select>
                       </label>
-                      {connected && editPatient.kind === "incoming" && !editPatientPod && plannedPodField(editPatientPlannedPod, setEditPatientPlannedPod)}
-                      <div className="grid grid-cols-2 gap-2">
+
+                      </fieldset><fieldset className="patient-form-section"><legend>Triage &amp; notes</legend><label>
+                        Triage
+                        <select
+                          value={editPatientTriage}
+                          onChange={(e) => setEditPatientTriage(e.target.value as Triage)}
+                          aria-label="Triage"
+                          className="rounded-sm border border-border bg-background px-2 py-1.5 text-xs font-semibold outline-none focus:border-signal"
+                        >
+                          {triageOptions.map((triage) => (
+                            <option key={triage} value={triage}>
+                              {triageLabel[triage]}
+                            </option>
+                          ))}
+                        </select>
+                      </label><label>
+                        Notes
+                        <input
+                          value={editPatientStatus}
+                          onChange={(e) => setEditPatientStatus(e.target.value)}
+                          placeholder="Notes"
+                          className="min-w-0 rounded-sm border border-border bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-signal"
+                        />
+                      </label></fieldset></div><div className="patient-form-actions">
                         <button
                           type="submit"
-                          className="rounded-sm border border-status-open bg-status-open px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-background hover:opacity-90"
+                          className="patient-primary-action"
                         >
                           Save
                         </button>
                         <button
                           type="button"
                           onClick={cancelPatientEdit}
-                          className="rounded-sm border border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground"
+                          className="patient-secondary-action"
                         >
                           Cancel
                         </button>
@@ -2328,5 +2349,6 @@ export function TentBoard({ connected }: { connected?: ConnectedBoard } = {}) {
       </PatientMovement>
     </DispositionActionContext.Provider>
     </ComplaintOptionsContext.Provider>
+    </FrequentComplaintsContext.Provider>
   );
 }
